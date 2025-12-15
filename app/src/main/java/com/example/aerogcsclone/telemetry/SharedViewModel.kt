@@ -1335,6 +1335,11 @@ class SharedViewModel : ViewModel() {
                     } else {
                         Log.i("ResumeMission", "✅ FC confirms $verifyCount waypoints stored")
                     }
+
+                    // Update mission upload status so startMission() doesn't fail
+                    _missionUploaded.value = true
+                    lastUploadedCount = resequenced.size
+                    Log.i("ResumeMission", "✅ Mission upload flags updated: uploaded=true, count=${resequenced.size}")
                 } else {
                     Log.e("ResumeMission", "❌ Mission upload FAILED - FC rejected mission")
                     onResult(false, "Mission upload failed - flight controller rejected mission")
