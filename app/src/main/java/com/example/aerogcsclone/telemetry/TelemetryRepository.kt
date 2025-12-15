@@ -892,6 +892,19 @@ class MavlinkTelemetryRepository(
 
                     Log.d("Spray Telemetry", "🎮 RC7 channel: $rc7Value PWM, Spray ${if (sprayEnabled) "ENABLED" else "DISABLED"}")
 
+                    // Check if spray status changed
+                    val previousSprayEnabled = state.value.sprayTelemetry.sprayEnabled
+                    if (sprayEnabled != previousSprayEnabled) {
+                        // Spray status changed - add notification and show popup
+                        val notificationMessage = if (sprayEnabled) "Sprayer Enabled" else "Sprayer Disabled"
+                        val notificationType = if (sprayEnabled) NotificationType.SUCCESS else NotificationType.INFO
+
+                        sharedViewModel.addNotification(Notification(notificationMessage, notificationType))
+                        sharedViewModel.showSprayStatusPopup(notificationMessage)
+
+                        Log.i("Spray Telemetry", "🚨 Spray status changed: $notificationMessage")
+                    }
+
                     _state.update { state ->
                         state.copy(
                             sprayTelemetry = state.sprayTelemetry.copy(

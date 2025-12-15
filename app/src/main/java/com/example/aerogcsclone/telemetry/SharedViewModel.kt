@@ -291,6 +291,15 @@ class SharedViewModel : ViewModel() {
             missionCompleted = completed,
             lastMissionElapsedSec = if (completed) elapsedSeconds else _telemetryState.value.lastMissionElapsedSec
         )
+
+        // Reset mission area when mission completes
+        if (completed) {
+            Log.i("SharedVM", "Mission completed - resetting mission area")
+            _missionAreaSqMeters.value = 0.0
+            _missionAreaFormatted.value = "0 acres"
+            _missionUploaded.value = false
+            lastUploadedCount = 0
+        }
     }
 
     // --- Calibration helpers ---
@@ -567,6 +576,33 @@ class SharedViewModel : ViewModel() {
     private val _sprayRate = MutableStateFlow(100f) // 10% to 100%
     val sprayRate: StateFlow<Float> = _sprayRate.asStateFlow()
 
+    // --- Notification State ---
+    private val _notifications = MutableStateFlow<List<Notification>>(emptyList())
+    val notifications: StateFlow<List<Notification>> = _notifications.asStateFlow()
+
+    private val _isNotificationPanelVisible = MutableStateFlow(false)
+    val isNotificationPanelVisible: StateFlow<Boolean> = _isNotificationPanelVisible.asStateFlow()
+
+    // Spray status popup (temporary message that disappears after 2 seconds)
+    private val _sprayStatusPopup = MutableStateFlow<String?>(null)
+    val sprayStatusPopup: StateFlow<String?> = _sprayStatusPopup.asStateFlow()
+
+    fun addNotification(notification: Notification) {
+        _notifications.value = listOf(notification) + _notifications.value
+    }
+
+    fun toggleNotificationPanel() {
+        _isNotificationPanelVisible.value = !_isNotificationPanelVisible.value
+    }
+
+    fun showSprayStatusPopup(message: String) {
+        viewModelScope.launch {
+            _sprayStatusPopup.value = message
+            delay(2000) // Show for 2 seconds
+            _sprayStatusPopup.value = null
+        }
+    }
+
     fun setSurveyPolygon(polygon: List<LatLng>) {
         _surveyPolygon.value = polygon
         updateGeofencePolygon()
@@ -717,49 +753,6 @@ class SharedViewModel : ViewModel() {
         }
     }
 
-    // --- Notification State ---
-    private val _notifications = MutableStateFlow<List<Notification>>(emptyList())
-    val notifications: StateFlow<List<Notification>> = _notifications.asStateFlow()
-
-    private val _isNotificationPanelVisible = MutableStateFlow(false)
-    val isNotificationPanelVisible: StateFlow<Boolean> = _isNotificationPanelVisible.asStateFlow()
-
-    fun addNotification(notification: Notification) {
-        _notifications.value = listOf(notification) + _notifications.value
-    }
-
-    fun toggleNotificationPanel() {
-        _isNotificationPanelVisible.value = !_isNotificationPanelVisible.value
-    }
-
-    fun startImuCalibration() {
-        viewModelScope.launch {
-            repo?.let {
-                try {
-                    val command = com.example.aerogcsclone.manager.CalibrationCommands.createImuCalibrationCommand(
-                        targetSystem = it.fcuSystemId,
-                        targetComponent = it.fcuComponentId
-                    )
-                    it.sendCommandLong(command)
-
-                    // Wait briefly for ACK of PREFLIGHT_CALIBRATION (241)
-                    val ack = awaitCommandAck(241u, timeoutMs = 4000)
-                    val resultVal = ack?.result?.value
-                    val accepted = resultVal == 0u || resultVal == 5u // ACCEPTED or IN_PROGRESS
-                    _imuCalibrationStartResult.value = accepted || ack == null // treat no-ACK as unknown, but allow UI flow
-                } catch (e: Exception) {
-                    Log.e("SharedVM", "IMU calibration start failed", e)
-                    _imuCalibrationStartResult.value = false
-                }
-            } ?: run {
-                _imuCalibrationStartResult.value = false
-            }
-        }
-    }
-
-    fun resetImuCalibrationStartResult() {
-        _imuCalibrationStartResult.value = null
-    }
 
     /**
      * Send a calibration command to the vehicle.

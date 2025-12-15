@@ -83,6 +83,9 @@ fun MainPage(
     val isNotificationPanelVisible by telemetryViewModel.isNotificationPanelVisible.collectAsState()
     val splitPlanActive by telemetryViewModel.splitPlanActive.collectAsState()
 
+    // Collect spray status popup
+    val sprayStatusPopup by telemetryViewModel.sprayStatusPopup.collectAsState()
+
     // Split plan confirmation dialog
     var showSplitPlanDialog by remember { mutableStateOf(false) }
 
@@ -92,11 +95,11 @@ fun MainPage(
     var showResumeProgressDialog by remember { mutableStateOf(false) }
 
     // Use mutableStateOf without remember key - let it update freely
-    var resumeWaypointNumber by mutableStateOf(
+    var resumeWaypointNumber by remember { mutableStateOf(
         telemetryState.pausedAtWaypoint
             ?: telemetryState.currentWaypoint
             ?: 1
-    )
+    )}
 
     // Always update resumeWaypointNumber when pausedAtWaypoint or currentWaypoint changes
     LaunchedEffect(telemetryState.pausedAtWaypoint, telemetryState.currentWaypoint) {
@@ -215,6 +218,17 @@ fun MainPage(
             if (isNotificationPanelVisible) {
                 Box(modifier = Modifier.align(Alignment.CenterEnd)) {
                     NotificationPanel(notifications = notifications)
+                }
+            }
+
+            // Spray Status Popup (appears at top center)
+            sprayStatusPopup?.let { message ->
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 16.dp)
+                ) {
+                    SprayStatusPopup(message = message)
                 }
             }
 
@@ -833,6 +847,42 @@ fun PauseResumeButtons(
                     fontWeight = FontWeight.Medium
                 )
             }
+        }
+    }
+}
+
+@Composable
+fun SprayStatusPopup(message: String) {
+    Surface(
+        modifier = Modifier
+            .wrapContentSize()
+            .padding(horizontal = 16.dp),
+        color = Color(0xFF4CAF50).copy(alpha = 0.9f), // Green background with transparency
+        shape = RoundedCornerShape(12.dp),
+        shadowElevation = 8.dp
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            Icon(
+                imageVector = if (message.contains("Enabled", ignoreCase = true))
+                    Icons.Default.CheckCircle
+                else
+                    Icons.Default.Info,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(24.dp)
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Text(
+                text = message,
+                color = Color.White,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.bodyLarge
+            )
         }
     }
 }
