@@ -55,6 +55,28 @@ fun LogsScreen(
     val selectedFlightIds = remember { mutableStateListOf<Long>() }
     var selectedFormat by remember { mutableStateOf(ExportFormat.entries.first()) }
 
+    // --- Filter state: allow filtering by exact date or by month ---
+    val dateOnlyFormat = remember { SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()) }
+    val monthOnlyFormat = remember { SimpleDateFormat("MMM yyyy", Locale.getDefault()) }
+
+    var showFilterOptionsDialog by remember { mutableStateOf(false) }
+    var showDateSelectDialog by remember { mutableStateOf(false) }
+    var showMonthSelectDialog by remember { mutableStateOf(false) }
+
+    var selectedDate by remember { mutableStateOf<String?>(null) }
+    var selectedMonth by remember { mutableStateOf<String?>(null) }
+
+    val displayedFlights by remember(flights, selectedDate, selectedMonth) {
+        derivedStateOf {
+            when {
+                selectedDate != null -> flights.filter { dateOnlyFormat.format(Date(it.startTime)) == selectedDate }
+                selectedMonth != null -> flights.filter { monthOnlyFormat.format(Date(it.startTime)) == selectedMonth }
+                else -> flights
+            }
+        }
+    }
+    // --- end filter state ---
+
     val scrollState = rememberScrollState()
 
     Box(
@@ -122,7 +144,7 @@ fun LogsScreen(
                                     color = Color.White
                                 )
                                 Text(
-                                    text = "${flights.size} missions recorded",
+                                    text = "${displayedFlights.size} missions recorded",
                                     fontSize = 12.sp,
                                     color = Color.White.copy(alpha = 0.6f)
                                 )
@@ -152,12 +174,12 @@ fun LogsScreen(
                             containerColor = Color.Transparent,
                             disabledContainerColor = Color.Gray.copy(alpha = 0.3f)
                         ),
-                        enabled = !uiState.isExporting && flights.isNotEmpty(),
+                        enabled = !uiState.isExporting && displayedFlights.isNotEmpty(),
                         modifier = Modifier
                             .height(48.dp)
                             .shadow(8.dp, RoundedCornerShape(24.dp))
                             .background(
-                                if (!uiState.isExporting && flights.isNotEmpty()) {
+                                if (!uiState.isExporting && displayedFlights.isNotEmpty()) {
                                     Brush.horizontalGradient(
                                         colors = listOf(
                                             Color(0xFF1E88E5),
@@ -336,10 +358,37 @@ fun LogsScreen(
                     fontWeight = FontWeight.Bold,
                     color = Color.White
                 )
+
+                Spacer(modifier = Modifier.weight(1f))
+
+                // Show active filter chip and clear button
+                if (selectedDate != null || selectedMonth != null) {
+                    val label = selectedDate ?: selectedMonth ?: ""
+                    Surface(
+                        color = Color(0xFF1E293B).copy(alpha = 0.6f),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.padding(end = 8.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
+                            Icon(Icons.Default.FilterList, contentDescription = null, tint = Color(0xFF60A5FA), modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(text = label, color = Color.White, fontSize = 12.sp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            IconButton(onClick = { selectedDate = null; selectedMonth = null }, modifier = Modifier.size(18.dp)) {
+                                Icon(Icons.Default.Close, contentDescription = "Clear filter", tint = Color.White, modifier = Modifier.size(14.dp))
+                            }
+                        }
+                    }
+                }
+
+                // Filter button to open filter options
+                IconButton(onClick = { showFilterOptionsDialog = true }) {
+                    Icon(Icons.Default.FilterList, contentDescription = "Filter", tint = Color(0xFF64B5F6))
+                }
             }
 
             // Flights List with modern cards
-            if (flights.isEmpty()) {
+            if (displayedFlights.isEmpty()) {
                 Card(
                     colors = CardDefaults.cardColors(
                         containerColor = Color(0xFF1E2844).copy(alpha = 0.6f)
@@ -396,7 +445,7 @@ fun LogsScreen(
                 Column(
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    flights.forEach { flight ->
+                    displayedFlights.forEach { flight ->
                         FlightItem(
                             flight = flight,
                             onViewDetails = { /* Navigate to flight details */ },
@@ -455,24 +504,24 @@ fun LogsScreen(
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Text("Recent flights", color = Color.White, fontWeight = FontWeight.Medium)
                         TextButton(onClick = {
-                            if (selectedFlightIds.size == flights.size) selectedFlightIds.clear()
+                            if (selectedFlightIds.size == displayedFlights.size) selectedFlightIds.clear()
                             else {
                                 selectedFlightIds.clear()
-                                selectedFlightIds.addAll(flights.map { it.id })
+                                selectedFlightIds.addAll(displayedFlights.map { it.id })
                             }
                         }) {
-                            Text(if (selectedFlightIds.size == flights.size) "Clear" else "Select All", color = Color(0xFF60A5FA))
+                            Text(if (selectedFlightIds.size == displayedFlights.size) "Clear" else "Select All", color = Color(0xFF60A5FA))
                         }
                     }
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    if (flights.isEmpty()) {
+                    if (displayedFlights.isEmpty()) {
                         Text("No flights available to select.", color = Color.White.copy(alpha = 0.7f))
                     } else {
                         // List of flights with checkboxes
                         LazyColumn(modifier = Modifier.weight(1f)) {
-                            items(items = flights.reversed(), key = { it.id }) { flight ->
+                            items(items = displayedFlights.reversed(), key = { it.id }) { flight ->
                                 val checked = selectedFlightIds.contains(flight.id)
                                 Row(modifier = Modifier
                                     .fillMaxWidth()
@@ -518,7 +567,7 @@ fun LogsScreen(
                 TextButton(
                     onClick = {
                         // Call export for each selected flight (uses existing ViewModel method)
-                        val selected = flights.filter { selectedFlightIds.contains(it.id) }
+                        val selected = displayedFlights.filter { selectedFlightIds.contains(it.id) }
                         selected.forEach { flight ->
                             tlogViewModel.exportFlight(flight, selectedFormat)
                         }
@@ -537,6 +586,120 @@ fun LogsScreen(
                 }) {
                     Text("Cancel", fontWeight = FontWeight.SemiBold)
                 }
+            }
+        )
+    }
+
+    // --- New: Filter Options Dialog ---
+    if (showFilterOptionsDialog) {
+        AlertDialog(
+            onDismissRequest = { showFilterOptionsDialog = false },
+            title = { Text("Filter Flights", fontWeight = FontWeight.Bold, fontSize = 18.sp) },
+            text = {
+                Column {
+                    Text("Choose how you'd like to filter the recent flights:", color = Color.White)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(onClick = {
+                        // Show all
+                        selectedDate = null
+                        selectedMonth = null
+                        showFilterOptionsDialog = false
+                    }, modifier = Modifier.fillMaxWidth()) {
+                        Text("Show All")
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(onClick = {
+                        showFilterOptionsDialog = false
+                        showDateSelectDialog = true
+                    }, modifier = Modifier.fillMaxWidth()) {
+                        Text("Filter by Date")
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(onClick = {
+                        showFilterOptionsDialog = false
+                        showMonthSelectDialog = true
+                    }, modifier = Modifier.fillMaxWidth()) {
+                        Text("Filter by Month")
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showFilterOptionsDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    // Date selection dialog: show unique dates from flights
+    if (showDateSelectDialog) {
+        val uniqueDatePairs = flights.map { dateOnlyFormat.format(Date(it.startTime)) to it.startTime }
+            .distinctBy { it.first }
+            .sortedByDescending { it.second }
+            .map { it.first }
+
+        AlertDialog(
+            onDismissRequest = { showDateSelectDialog = false },
+            title = { Text("Select Date", fontWeight = FontWeight.Bold, fontSize = 18.sp) },
+            text = {
+                if (uniqueDatePairs.isEmpty()) {
+                    Text("No flights available to filter.", color = Color.White)
+                } else {
+                    LazyColumn(modifier = Modifier.heightIn(max = 360.dp)) {
+                        items(uniqueDatePairs) { dateStr ->
+                            Row(modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    selectedDate = dateStr
+                                    selectedMonth = null
+                                    showDateSelectDialog = false
+                                }
+                                .padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text(dateStr, color = Color.White)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showDateSelectDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    // Month selection dialog: show unique months from flights
+    if (showMonthSelectDialog) {
+        val uniqueMonthPairs = flights.map { monthOnlyFormat.format(Date(it.startTime)) to it.startTime }
+            .distinctBy { it.first }
+            .sortedByDescending { it.second }
+            .map { it.first }
+
+        AlertDialog(
+            onDismissRequest = { showMonthSelectDialog = false },
+            title = { Text("Select Month", fontWeight = FontWeight.Bold, fontSize = 18.sp) },
+            text = {
+                if (uniqueMonthPairs.isEmpty()) {
+                    Text("No flights available to filter.", color = Color.White)
+                } else {
+                    LazyColumn(modifier = Modifier.heightIn(max = 360.dp)) {
+                        items(uniqueMonthPairs) { monthStr ->
+                            Row(modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    selectedMonth = monthStr
+                                    selectedDate = null
+                                    showMonthSelectDialog = false
+                                }
+                                .padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text(monthStr, color = Color.White)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showMonthSelectDialog = false }) { Text("Cancel") }
             }
         )
     }
