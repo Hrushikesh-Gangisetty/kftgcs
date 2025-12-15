@@ -103,18 +103,37 @@ fun LogsScreen(
                             )
                         }
                         Spacer(modifier = Modifier.width(16.dp))
-                        Column {
-                            Text(
-                                text = "Flight Logs",
-                                fontSize = 28.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White
-                            )
-                            Text(
-                                text = "${flights.size} missions recorded",
-                                fontSize = 14.sp,
-                                color = Color.White.copy(alpha = 0.6f)
-                            )
+                        // Title and inline compact stats
+                        // Add right padding so the inline stats don't collide with the export button
+                        Row(modifier = Modifier.fillMaxWidth().padding(end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Flight Logs",
+                                    fontSize = 22.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                                Text(
+                                    text = "${flights.size} missions recorded",
+                                    fontSize = 12.sp,
+                                    color = Color.White.copy(alpha = 0.6f)
+                                )
+                            }
+
+                            // Compact stats shown inline in the top nav (no logic changes)
+                            // Increase spacing between stat items to avoid overlap
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Icon(Icons.Default.Flight, contentDescription = "Total Flights", tint = Color(0xFF60A5FA), modifier = Modifier.size(16.dp))
+                                    Text(text = uiState.totalFlights.toString(), color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                                    Text(text = "Total", color = Color.White.copy(alpha = 0.6f), fontSize = 10.sp)
+                                }
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Icon(Icons.Default.AccessTime, contentDescription = "Flight Time", tint = Color(0xFF34D399), modifier = Modifier.size(16.dp))
+                                    Text(text = formatDuration(uiState.totalFlightTime), color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                                    Text(text = "Time", color = Color.White.copy(alpha = 0.6f), fontSize = 10.sp)
+                                }
+                            }
                         }
                     }
 
@@ -173,13 +192,6 @@ fun LogsScreen(
                         )
                     }
                 }
-
-            // Modern Statistics Card
-            StatsCard(
-                totalFlights = uiState.totalFlights,
-                totalFlightTime = uiState.totalFlightTime,
-                modifier = Modifier.padding(bottom = 16.dp)
-            )
 
             // Active Flight Status
             if (uiState.isFlightActive) {
@@ -372,8 +384,9 @@ fun LogsScreen(
                     }
                 }
             } else {
+                // Denser list: reduce vertical spacing between items
                 Column(
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     flights.forEach { flight ->
                         FlightItem(
@@ -387,122 +400,6 @@ fun LogsScreen(
                 }
             }
         }
-    }
-}
-
-@Composable
-fun StatsCard(
-    totalFlights: Int,
-    totalFlightTime: Long,
-    modifier: Modifier = Modifier
-) {
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = Color.Transparent
-        ),
-        modifier = modifier
-            .fillMaxWidth()
-            .shadow(12.dp, RoundedCornerShape(20.dp)),
-        shape = RoundedCornerShape(20.dp)
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(
-                    Brush.linearGradient(
-                        colors = listOf(
-                            Color(0xFF1E3A8A).copy(alpha = 0.8f),
-                            Color(0xFF1E293B).copy(alpha = 0.9f)
-                        )
-                    )
-                )
-        ) {
-            Row(
-                modifier = Modifier
-                    .padding(24.dp)
-                    .fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                StatItem(
-                    icon = Icons.Default.Flight,
-                    label = "Total Flights",
-                    value = totalFlights.toString(),
-                    color = Color(0xFF60A5FA)
-                )
-
-                Box(
-                    modifier = Modifier
-                        .height(60.dp)
-                        .width(2.dp)
-                        .background(
-                            Brush.verticalGradient(
-                                colors = listOf(
-                                    Color.Transparent,
-                                    Color.White.copy(alpha = 0.3f),
-                                    Color.Transparent
-                                )
-                            )
-                        )
-                )
-
-                StatItem(
-                    icon = Icons.Default.AccessTime,
-                    label = "Flight Time",
-                    value = formatDuration(totalFlightTime),
-                    color = Color(0xFF34D399)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun StatItem(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    label: String,
-    value: String,
-    color: Color = Color(0xFF60A5FA)
-) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.padding(horizontal = 8.dp)
-    ) {
-        Box(
-            modifier = Modifier
-                .size(56.dp)
-                .clip(CircleShape)
-                .background(
-                    Brush.radialGradient(
-                        colors = listOf(
-                            color.copy(alpha = 0.3f),
-                            Color.Transparent
-                        )
-                    )
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                icon,
-                contentDescription = label,
-                tint = color,
-                modifier = Modifier.size(32.dp)
-            )
-        }
-        Spacer(modifier = Modifier.height(12.dp))
-        Text(
-            text = value,
-            color = Color.White,
-            fontSize = 24.sp,
-            fontWeight = FontWeight.Bold
-        )
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = label,
-            color = Color.White.copy(alpha = 0.6f),
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Medium
-        )
     }
 }
 
@@ -627,16 +524,14 @@ fun FlightItem(
     val dateFormat = SimpleDateFormat("MMM dd, yyyy", Locale.getDefault())
     val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
 
+    // Ultra-compact flight item: minimal height, tiny icons and fonts
     Card(
-        colors = CardDefaults.cardColors(
-            containerColor = Color.Transparent
-        ),
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
         modifier = modifier
-            .fillMaxWidth()
-            .shadow(8.dp, RoundedCornerShape(18.dp)),
-        shape = RoundedCornerShape(18.dp)
+            .fillMaxWidth(),
+        shape = RoundedCornerShape(4.dp)
     ) {
-        Box(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(
@@ -648,181 +543,73 @@ fun FlightItem(
                     )
                 )
                 .clickable { onViewDetails() }
+                .padding(vertical = 4.dp, horizontal = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(
+            // Minimal status
+            Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(20.dp)
+                    .size(22.dp)
+                    .clip(CircleShape)
+                    .background(
+                        if (flight.isCompleted) Brush.radialGradient(listOf(Color(0xFF10B981), Color.Transparent))
+                        else Brush.radialGradient(listOf(Color(0xFFFFA500), Color.Transparent))
+                    ),
+                contentAlignment = Alignment.Center
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    // Status indicator with gradient circle
-                    Box(
-                        modifier = Modifier
-                            .size(52.dp)
-                            .clip(CircleShape)
-                            .background(
-                                if (flight.isCompleted) {
-                                    Brush.radialGradient(
-                                        colors = listOf(
-                                            Color(0xFF10B981).copy(alpha = 0.3f),
-                                            Color.Transparent
-                                        )
-                                    )
-                                } else {
-                                    Brush.radialGradient(
-                                        colors = listOf(
-                                            Color(0xFFFFA500).copy(alpha = 0.3f),
-                                            Color.Transparent
-                                        )
-                                    )
-                                }
-                            ),
-                        contentAlignment = Alignment.Center
+                Icon(
+                    if (flight.isCompleted) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                    contentDescription = null,
+                    tint = if (flight.isCompleted) Color(0xFF10B981) else Color(0xFFFFA500),
+                    modifier = Modifier.size(10.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(6.dp))
+
+            // Date + time compact
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text = dateFormat.format(Date(flight.startTime)), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Normal)
+                Text(text = timeFormat.format(Date(flight.startTime)), color = Color(0xFF60A5FA), fontSize = 8.sp)
+            }
+
+            // Tiny chips for duration / area (show only if present)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                flight.flightDuration?.let { duration ->
+                    Surface(
+                        color = Color(0xFF1E3A8A).copy(alpha = 0.12f),
+                        shape = RoundedCornerShape(12.dp),
+                        tonalElevation = 0.dp,
+                        modifier = Modifier.padding(end = 4.dp)
                     ) {
-                        Icon(
-                            if (flight.isCompleted) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
-                            contentDescription = if (flight.isCompleted) "Completed" else "In Progress",
-                            tint = if (flight.isCompleted) Color(0xFF10B981) else Color(0xFFFFA500),
-                            modifier = Modifier.size(28.dp)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.width(16.dp))
-
-                    // Flight info
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = dateFormat.format(Date(flight.startTime)),
-                            color = Color.White,
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = timeFormat.format(Date(flight.startTime)),
-                            color = Color(0xFF60A5FA),
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-
-                    // Action buttons with modern styling
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        // Export button
-                        IconButton(
-                            onClick = { showExportDialog = true },
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(CircleShape)
-                                .background(
-                                    Color(0xFF1E88E5).copy(alpha = 0.15f)
-                                )
-                        ) {
-                            Icon(
-                                Icons.Default.Download,
-                                contentDescription = "Export",
-                                tint = Color(0xFF60A5FA),
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-
-                        // Delete button
-                        IconButton(
-                            onClick = { showDeleteDialog = true },
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(CircleShape)
-                                .background(
-                                    Color(0xFFEF4444).copy(alpha = 0.15f)
-                                )
-                        ) {
-                            Icon(
-                                Icons.Default.Delete,
-                                contentDescription = "Delete",
-                                tint = Color(0xFFEF4444),
-                                modifier = Modifier.size(20.dp)
-                            )
+                        Row(modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.AccessTime, contentDescription = null, tint = Color(0xFF60A5FA), modifier = Modifier.size(12.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(text = formatDuration(duration), color = Color.White, fontSize = 10.sp)
                         }
                     }
                 }
 
-                // Flight details section with modern cards
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    flight.flightDuration?.let { duration ->
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(Color(0xFF1E3A8A).copy(alpha = 0.2f))
-                                .padding(12.dp)
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    Icons.Default.AccessTime,
-                                    contentDescription = "Duration",
-                                    tint = Color(0xFF60A5FA),
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Column {
-                                    Text(
-                                        text = formatDuration(duration),
-                                        color = Color.White,
-                                        fontSize = 16.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    Text(
-                                        text = "Duration",
-                                        color = Color.White.copy(alpha = 0.6f),
-                                        fontSize = 11.sp
-                                    )
-                                }
-                            }
+                flight.area?.let { area ->
+                    Surface(
+                        color = Color(0xFF059669).copy(alpha = 0.10f),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.padding(start = 2.dp)
+                    ) {
+                        Row(modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Landscape, contentDescription = null, tint = Color(0xFF34D399), modifier = Modifier.size(12.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(text = String.format(Locale.getDefault(), "%.2f ha", area), color = Color.White, fontSize = 10.sp)
                         }
                     }
+                }
 
-                    flight.area?.let { area ->
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(Color(0xFF059669).copy(alpha = 0.2f))
-                                .padding(12.dp)
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    Icons.Default.Landscape,
-                                    contentDescription = "Area",
-                                    tint = Color(0xFF34D399),
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Column {
-                                    Text(
-                                        text = String.format(Locale.getDefault(), "%.2f ha", area),
-                                        color = Color.White,
-                                        fontSize = 16.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    Text(
-                                        text = "Area",
-                                        color = Color.White.copy(alpha = 0.6f),
-                                        fontSize = 11.sp
-                                    )
-                                }
-                            }
-                        }
-                    }
+                // Small action icons
+                IconButton(onClick = { showExportDialog = true }, modifier = Modifier.size(28.dp)) {
+                    Icon(Icons.Default.Download, contentDescription = "Export", modifier = Modifier.size(12.dp), tint = Color(0xFF60A5FA))
+                }
+                IconButton(onClick = { showDeleteDialog = true }, modifier = Modifier.size(28.dp)) {
+                    Icon(Icons.Default.Delete, contentDescription = "Delete", modifier = Modifier.size(12.dp), tint = Color(0xFFEF4444))
                 }
             }
         }
