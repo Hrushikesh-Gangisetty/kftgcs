@@ -1,6 +1,7 @@
 package com.example.aerogcsclone.uiflyingmethod
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -8,6 +9,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -17,81 +19,131 @@ import androidx.navigation.NavController
 import com.example.aerogcsclone.R
 import com.example.aerogcsclone.navigation.Screen
 import com.example.aerogcsclone.telemetry.SharedViewModel
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.FlightTakeoff
+import androidx.compose.ui.unit.Dp
 
 @Composable
 fun SelectFlyingMethodScreen(navController: NavController, sharedViewModel: SharedViewModel) {
     Surface(
         modifier = Modifier.fillMaxSize(),
-        color = Color(0xFF23272A) // dark grey
+        color = Color.Transparent
     ) {
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color(0xFF0A0E27),
+                            Color(0xFF1A1F3A),
+                            Color(0xFF0F1419)
+                        )
+                    )
+                ),
+            contentAlignment = Alignment.Center // center everything inside the Box
         ) {
-            Text(
-                text = "Select Flying Method",
-                color = Color.White,
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(bottom = 48.dp)
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly
+            Column(
+                modifier = Modifier
+                    .wrapContentSize() // make the column wrap its content so it can be perfectly centered
+                    .padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
             ) {
-                FlyingMethodCard(
-                    icon = { Image(painter = painterResource(id = R.drawable.autonomous), contentDescription = "Automatic", modifier = Modifier.size(64.dp)) },
-                    label = "Automatic",
-                    onClick = {
-                        sharedViewModel.announceSelectedAutomatic()
-                        navController.navigate(Screen.Main.route)
+                // Header like LogsScreen (centered)
+                Row(
+                    modifier = Modifier.wrapContentWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(56.dp)
+                            .clip(CircleShape)
+                            .background(
+                                Brush.linearGradient(
+                                    colors = listOf(Color(0xFF2196F3), Color(0xFF1976D2))
+                                )
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.FlightTakeoff, contentDescription = null, tint = Color.White, modifier = Modifier.size(28.dp))
                     }
-                )
-                FlyingMethodCard(
-                    icon = { Image(painter = painterResource(id = R.drawable.manual), contentDescription = "Manual", modifier = Modifier.size(64.dp)) },
-                    label = "Manual",
-                    onClick = {
-                        sharedViewModel.announceSelectedManual()
-                        navController.navigate(Screen.Main.route)
+
+                    Spacer(modifier = Modifier.width(12.dp))
+
+                    Column {
+                        Text("Select Flying Method", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                        Text("Choose how you'd like to fly", color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp)
                     }
-                )
+                }
+
+                Spacer(modifier = Modifier.height(28.dp))
+
+                Row(
+                    modifier = Modifier.wrapContentWidth(), // wrap so the row itself is centered
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    StyledFlyingMethodCard(
+                        icon = { Image(painter = painterResource(id = R.drawable.autonomous), contentDescription = "Automatic", modifier = Modifier.size(64.dp)) },
+                        label = "Automatic",
+                        onClick = {
+                            sharedViewModel.announceSelectedAutomatic()
+                            navController.navigate(Screen.Main.route)
+                        }
+                    )
+
+                    StyledFlyingMethodCard(
+                        icon = { Image(painter = painterResource(id = R.drawable.manual), contentDescription = "Manual", modifier = Modifier.size(64.dp)) },
+                        label = "Manual",
+                        onClick = {
+                            sharedViewModel.announceSelectedManual()
+                            navController.navigate(Screen.Main.route)
+                        }
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text("You can change this later from settings.", color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp)
             }
         }
     }
 }
 
 @Composable
-fun FlyingMethodCard(
+fun StyledFlyingMethodCard(
     icon: @Composable () -> Unit,
     label: String,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    size: Dp = 160.dp
 ) {
     Card(
         modifier = Modifier
-            .size(150.dp)
-            .clickable(onClick = onClick),
+            .size(size)
+            .clickable(onClick = onClick)
+            .shadow(10.dp, RoundedCornerShape(16.dp)),
         shape = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF2C2F33)) // slightly lighter dark grey
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B).copy(alpha = 0.6f))
     ) {
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(Color(0xFF1E293B), Color(0xFF0F172A))
+                    )
+                ),
+            contentAlignment = Alignment.Center
         ) {
-            icon()
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = label,
-                color = Color.White,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.SemiBold
-            )
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                icon()
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(label, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+            }
         }
     }
 }

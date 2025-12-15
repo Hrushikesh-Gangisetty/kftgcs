@@ -8,13 +8,23 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bluetooth
+import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.SignalWifiOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.example.aerogcsclone.navigation.Screen
 import com.example.aerogcsclone.telemetry.ConnectionType
@@ -94,7 +104,15 @@ fun ConnectionPage(navController: NavController, viewModel: SharedViewModel) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF535350))
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(
+                        Color(0xFF0A0E27),
+                        Color(0xFF131722),
+                        Color(0xFF0F1419)
+                    )
+                )
+            )
             .padding(20.dp),
         contentAlignment = Alignment.Center
     ) {
@@ -105,16 +123,66 @@ fun ConnectionPage(navController: NavController, viewModel: SharedViewModel) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Text(
-                AppStrings.connectionTitle,
-                style = MaterialTheme.typography.headlineMedium,
-                color = Color.White
-            )
+            // Modern Header (styled similar to LogsScreen)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 20.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .background(
+                                Brush.linearGradient(
+                                    colors = listOf(Color(0xFF2196F3), Color(0xFF1976D2))
+                                )
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            when (connectionType) {
+                                ConnectionType.TCP -> Icons.Default.Cloud
+                                ConnectionType.BLUETOOTH -> Icons.Default.Bluetooth
+                            },
+                            contentDescription = "Connection",
+                            tint = Color.White,
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
 
-            Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            AppStrings.connectionTitle,
+                            style = MaterialTheme.typography.headlineMedium,
+                            color = Color.White
+                        )
+                        Text(
+                            AppStrings.connectionType,
+                            color = Color.White.copy(alpha = 0.6f),
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+
+                // Spacer to keep header compact; no action buttons here to avoid logic changes
+                Spacer(modifier = Modifier.width(8.dp))
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
 
             val tabs = listOf(AppStrings.tcp, AppStrings.bluetooth)
-            TabRow(selectedTabIndex = connectionType.ordinal, containerColor = Color(0xFF333330)) {
+            TabRow(
+                selectedTabIndex = connectionType.ordinal,
+                containerColor = Color(0xFF1E293B).copy(alpha = 0.6f),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .shadow(6.dp, RoundedCornerShape(12.dp))
+            ) {
                 tabs.forEachIndexed { index, title ->
                     Tab(
                         selected = connectionType.ordinal == index,
@@ -124,7 +192,7 @@ fun ConnectionPage(navController: NavController, viewModel: SharedViewModel) {
                 }
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
             when (connectionType) {
                 ConnectionType.TCP -> TcpConnectionContent(viewModel)
@@ -134,38 +202,86 @@ fun ConnectionPage(navController: NavController, viewModel: SharedViewModel) {
             Spacer(modifier = Modifier.height(20.dp))
 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                // Styled Connect button
                 Button(
                     onClick = { startConnection() },
-                    modifier = Modifier.weight(1f),
-                    enabled = isConnectEnabled
+                    modifier = Modifier.weight(1f).height(52.dp),
+                    enabled = isConnectEnabled,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
+                    contentPadding = PaddingValues()
                 ) {
-                    Text(if (isConnecting) AppStrings.connecting else AppStrings.connect)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .shadow(8.dp, RoundedCornerShape(26.dp))
+                            .background(
+                                Brush.horizontalGradient(
+                                    colors = if (isConnectEnabled) listOf(Color(0xFF1E88E5), Color(0xFF1565C0)) else listOf(Color.Gray.copy(alpha = 0.3f), Color.Gray.copy(alpha = 0.3f))
+                                ), RoundedCornerShape(26.dp)
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (isConnecting) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
+                        } else {
+                            Text(AppStrings.connect, color = Color.White, fontSize = 16.sp)
+                        }
+                    }
                 }
+
                 Spacer(modifier = Modifier.width(12.dp))
+
+                // Styled Cancel button
                 Button(
                     onClick = { cancelConnection() },
-                    modifier = Modifier.weight(1f),
-                    enabled = isConnecting
+                    modifier = Modifier.weight(1f).height(52.dp),
+                    enabled = isConnecting,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
+                    contentPadding = PaddingValues()
                 ) {
-                    Text(AppStrings.cancel)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .shadow(6.dp, RoundedCornerShape(26.dp))
+                            .background(
+                                Brush.horizontalGradient(
+                                    colors = if (isConnecting) listOf(Color(0xFFEF4444), Color(0xFFDC2626)) else listOf(Color(0xFF374151), Color(0xFF1F2937))
+                                ), RoundedCornerShape(26.dp)
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(AppStrings.cancel, color = Color.White, fontSize = 16.sp)
+                    }
                 }
             }
 
             if (errorMessage.isNotEmpty() && !showPopup) {
                 Spacer(modifier = Modifier.height(10.dp))
-                Text(errorMessage, color = MaterialTheme.colorScheme.error)
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFF5252).copy(alpha = 0.12f)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 12.dp)
+                        .shadow(4.dp, RoundedCornerShape(12.dp)),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.SignalWifiOff, contentDescription = null, tint = Color(0xFFFF5252), modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(text = errorMessage, color = Color(0xFFFF5252), modifier = Modifier.weight(1f))
+                        TextButton(onClick = { errorMessage = "" }) { Text("OK", color = Color(0xFFFF5252)) }
+                    }
+                }
             }
         }
 
         if (showPopup) {
             AlertDialog(
                 onDismissRequest = { showPopup = false },
-                title = { Text(AppStrings.connectionFailed) },
+                title = { Text(AppStrings.connectionFailed, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold) },
                 text = { Text(errorMessage) },
                 confirmButton = {
-                    Button(onClick = { showPopup = false }) {
-                        Text(AppStrings.ok)
-                    }
+                    Button(onClick = { showPopup = false }) { Text(AppStrings.ok) }
                 }
             )
         }
