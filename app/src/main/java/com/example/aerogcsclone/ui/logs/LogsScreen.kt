@@ -47,6 +47,14 @@ fun LogsScreen(
     val uiState by tlogViewModel.uiState.collectAsState()
     val flights by tlogViewModel.flights.collectAsState(initial = emptyList())
 
+    // UI-only state for export dialogs
+    var showExportChoiceDialog by remember { mutableStateOf(false) }
+    var showExportSelectDialog by remember { mutableStateOf(false) }
+
+    // Selection state for 'Select Flights' dialog
+    val selectedFlightIds = remember { mutableStateListOf<Long>() }
+    var selectedFormat by remember { mutableStateOf(ExportFormat.entries.first()) }
+
     val scrollState = rememberScrollState()
 
     Box(
@@ -139,7 +147,7 @@ fun LogsScreen(
 
                     // Export All Button with modern design
                     Button(
-                        onClick = { tlogViewModel.exportAllFlights() },
+                        onClick = { showExportChoiceDialog = true },
                         colors = ButtonDefaults.buttonColors(
                             containerColor = Color.Transparent,
                             disabledContainerColor = Color.Gray.copy(alpha = 0.3f)
@@ -400,6 +408,137 @@ fun LogsScreen(
                 }
             }
         }
+    }
+
+    // Export choice dialog shown when top export button is clicked (UI-only)
+    if (showExportChoiceDialog) {
+        AlertDialog(
+            onDismissRequest = { showExportChoiceDialog = false },
+            title = {
+                Text("Export Options", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            },
+            text = {
+                Text("Would you like to export all flights, or select specific flights to export?", color = Color.White)
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        // Call existing exportAllFlights logic (no logic change)
+                        tlogViewModel.exportAllFlights()
+                        showExportChoiceDialog = false
+                    }
+                ) {
+                    Text("Export All", fontWeight = FontWeight.SemiBold)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showExportChoiceDialog = false
+                        showExportSelectDialog = true
+                    }
+                ) {
+                    Text("Select", fontWeight = FontWeight.SemiBold)
+                }
+            }
+        )
+    }
+
+    // Placeholder Select UI (UI-only, no selection logic)
+    if (showExportSelectDialog) {
+        AlertDialog(
+            onDismissRequest = { showExportSelectDialog = false },
+            title = { Text("Select Flights to Export", fontWeight = FontWeight.Bold, fontSize = 18.sp) },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp, max = 420.dp)) {
+                    // Select All / Clear row
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Text("Recent flights", color = Color.White, fontWeight = FontWeight.Medium)
+                        TextButton(onClick = {
+                            if (selectedFlightIds.size == flights.size) selectedFlightIds.clear()
+                            else {
+                                selectedFlightIds.clear()
+                                selectedFlightIds.addAll(flights.map { it.id })
+                            }
+                        }) {
+                            Text(if (selectedFlightIds.size == flights.size) "Clear" else "Select All", color = Color(0xFF60A5FA))
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    if (flights.isEmpty()) {
+                        Text("No flights available to select.", color = Color.White.copy(alpha = 0.7f))
+                    } else {
+                        // List of flights with checkboxes
+                        LazyColumn(modifier = Modifier.weight(1f)) {
+                            items(items = flights.reversed(), key = { it.id }) { flight ->
+                                val checked = selectedFlightIds.contains(flight.id)
+                                Row(modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 6.dp)
+                                    .clickable {
+                                        if (checked) selectedFlightIds.remove(flight.id) else selectedFlightIds.add(flight.id)
+                                    },
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Checkbox(checked = checked, onCheckedChange = { isChecked ->
+                                        if (isChecked) selectedFlightIds.add(flight.id) else selectedFlightIds.remove(flight.id)
+                                    })
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(text = SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()).format(Date(flight.startTime)), color = Color.White)
+                                        Text(text = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(flight.startTime)), color = Color.White.copy(alpha = 0.65f), fontSize = 12.sp)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Format selection
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Text("Export format", color = Color.White.copy(alpha = 0.85f), fontWeight = FontWeight.Medium)
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            ExportFormat.entries.forEach { format ->
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    RadioButton(selected = (selectedFormat == format), onClick = { selectedFormat = format })
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(format.displayName, color = Color.White)
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                // Export button: call exportFlight for each selected flight
+                TextButton(
+                    onClick = {
+                        // Call export for each selected flight (uses existing ViewModel method)
+                        val selected = flights.filter { selectedFlightIds.contains(it.id) }
+                        selected.forEach { flight ->
+                            tlogViewModel.exportFlight(flight, selectedFormat)
+                        }
+                        selectedFlightIds.clear()
+                        showExportSelectDialog = false
+                    },
+                    enabled = selectedFlightIds.isNotEmpty()
+                ) {
+                    Text("Export", fontWeight = FontWeight.SemiBold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    selectedFlightIds.clear()
+                    showExportSelectDialog = false
+                }) {
+                    Text("Cancel", fontWeight = FontWeight.SemiBold)
+                }
+            }
+        )
     }
 }
 
