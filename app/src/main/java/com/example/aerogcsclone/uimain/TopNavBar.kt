@@ -26,6 +26,7 @@ import com.example.aerogcsclone.Telemetry.TelemetryState
 import com.example.aerogcsclone.authentication.AuthViewModel
 import com.example.aerogcsclone.navigation.Screen
 import com.example.aerogcsclone.telemetry.SharedViewModel
+import android.util.Log
 
 @Composable
 fun TopNavBar(
@@ -53,7 +54,11 @@ fun TopNavBar(
 
     // Remember the mode to prevent flickering due to recomposition
     val displayMode by remember(telemetryState.mode) {
-        derivedStateOf { telemetryState.mode ?: "N/A" }
+        derivedStateOf {
+            val mode = telemetryState.mode ?: "N/A"
+            Log.d("TopNavBar", "Display mode updated: $mode (from telemetryState.mode: ${telemetryState.mode})")
+            mode
+        }
     }
 
     // Set nav bar gradient colors based on connection status

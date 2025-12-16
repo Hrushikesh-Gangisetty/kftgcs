@@ -230,7 +230,21 @@ class MavlinkTelemetryRepository(
         // Detect FCU and set connected state based on FCU heartbeat
         scope.launch {
             mavFrame
-                .filter { it.message is Heartbeat && (it.message as Heartbeat).type != MavType.GCS.wrap() }
+                .filter { frame ->
+                    val msg = frame.message
+                    if (msg is Heartbeat) {
+                        // CRITICAL: Only detect actual flight controllers, not ADSB/cameras/gimbals
+                        val isNotGCS = msg.type != MavType.GCS.wrap()
+                        val isAutopilot = msg.autopilot != MavAutopilot.INVALID.wrap()
+
+                        if (!isNotGCS || !isAutopilot) {
+                            Log.d("MavlinkRepo", "Ignoring heartbeat: type=${msg.type.entry?.name ?: msg.type.value}, autopilot=${msg.autopilot.entry?.name ?: msg.autopilot.value}")
+                            return@filter false
+                        }
+                        return@filter true
+                    }
+                    false
+                }
                 .collect {
                     // Update heartbeat timestamp
                     lastFcuHeartbeatTime.set(System.currentTimeMillis())
@@ -238,8 +252,61 @@ class MavlinkTelemetryRepository(
                     if (!state.value.fcuDetected) {
                         fcuSystemId = it.systemId
                         fcuComponentId = it.componentId
-                        Log.i("MavlinkRepo", "FCU detected sysId=$fcuSystemId compId=$fcuComponentId")
-                        _state.update { state -> state.copy(fcuDetected = true, connected = true) }
+
+                        // Extract mode from the FIRST heartbeat during connection
+                        val hb = it.message as Heartbeat
+                        val armed = (hb.baseMode.value and MavModeFlag.SAFETY_ARMED.value) != 0u
+
+                        // ArduPilot Copter mode mapping
+                        val initialMode = when (hb.customMode) {
+                            0u -> "Stabilize"
+                            1u -> "Acro"
+                            2u -> "AltHold"
+                            3u -> "Auto"
+                            4u -> "Guided"
+                            5u -> "Loiter"
+                            6u -> "RTL"
+                            7u -> "Circle"
+                            8u -> "Position"
+                            9u -> "Land"
+                            10u -> "OF_Loiter"
+                            11u -> "Drift"
+                            13u -> "Sport"
+                            14u -> "Flip"
+                            15u -> "AutoTune"
+                            16u -> "PosHold"
+                            17u -> "Brake"
+                            18u -> "Throw"
+                            19u -> "Avoid_ADSB"
+                            20u -> "Guided_NoGPS"
+                            21u -> "Smart_RTL"
+                            22u -> "FlowHold"
+                            23u -> "Follow"
+                            24u -> "ZigZag"
+                            25u -> "SystemID"
+                            26u -> "AutoRotate"
+                            27u -> "Auto_RTL"
+                            else -> "Mode ${hb.customMode}"
+                        }
+
+                        Log.i("MavlinkRepo", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+                        Log.i("MavlinkRepo", "✅ FCU DETECTED:")
+                        Log.i("MavlinkRepo", "  System ID: ${it.systemId}, Component ID: ${it.componentId}")
+                        Log.i("MavlinkRepo", "  Type: ${hb.type.entry?.name ?: hb.type.value}")
+                        Log.i("MavlinkRepo", "  Autopilot: ${hb.autopilot.entry?.name ?: hb.autopilot.value}")
+                        Log.i("MavlinkRepo", "  customMode: ${hb.customMode} → $initialMode")
+                        Log.i("MavlinkRepo", "  armed: $armed")
+                        Log.i("MavlinkRepo", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+                        // Set fcuDetected, connected, AND initial mode/armed state
+                        _state.update { state ->
+                            state.copy(
+                                fcuDetected = true,
+                                connected = true,
+                                mode = initialMode,
+                                armed = armed
+                            )
+                        }
 
                         // Set message intervals
                         launch {
@@ -611,22 +678,36 @@ class MavlinkTelemetryRepository(
                 .map { frame -> frame.message }
                 .filterIsInstance<Heartbeat>()
                 .collect { hb ->
+                    // CRITICAL: Log the RAW customMode value from the FCU heartbeat
+                    Log.i("MavlinkRepo", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+                    Log.i("MavlinkRepo", "HEARTBEAT from FCU - RAW DATA:")
+                    Log.i("MavlinkRepo", "  customMode = ${hb.customMode} (raw UInt value)")
+                    Log.i("MavlinkRepo", "  baseMode = ${hb.baseMode.value}")
+                    Log.i("MavlinkRepo", "  type = ${hb.type.entry?.name ?: hb.type.value}")
+                    Log.i("MavlinkRepo", "  autopilot = ${hb.autopilot.entry?.name ?: hb.autopilot.value}")
+                    Log.i("MavlinkRepo", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
                     val armed = (hb.baseMode.value and MavModeFlag.SAFETY_ARMED.value) != 0u
+
+                    // ArduPilot Copter mode mapping (consistent with initial detection)
+                    // Reference: https://github.com/ArduPilot/ardupilot/blob/master/ArduCopter/mode.h
                     val mode = when (hb.customMode) {
                         0u -> "Stabilize"
                         1u -> "Acro"
-                        2u -> "Alt Hold"
+                        2u -> "AltHold"
                         3u -> "Auto"
                         4u -> "Guided"
                         5u -> "Loiter"
                         6u -> "RTL"
                         7u -> "Circle"
+                        8u -> "Position"      // Position mode
                         9u -> "Land"
+                        10u -> "OF_Loiter"    // Optical Flow Loiter
                         11u -> "Drift"
                         13u -> "Sport"
                         14u -> "Flip"
                         15u -> "AutoTune"
-                        16u -> "Pos Hold"
+                        16u -> "PosHold"
                         17u -> "Brake"
                         18u -> "Throw"
                         19u -> "Avoid_ADSB"
@@ -638,13 +719,22 @@ class MavlinkTelemetryRepository(
                         25u -> "SystemID"
                         26u -> "AutoRotate"
                         27u -> "Auto_RTL"
-                        else -> "Unknown"
+                        else -> {
+                            Log.w("MavlinkRepo", "⚠️ Unknown customMode in heartbeat: ${hb.customMode}")
+                            Log.w("MavlinkRepo", "   This mode is not in the ArduPilot Copter mode table")
+                            "Mode ${hb.customMode}"
+                        }
                     }
+
+                    // Log the parsed mode for verification
+                    Log.i("MavlinkRepo", "✅ Parsed mode: $mode (from customMode: ${hb.customMode})")
 
                     // Only update state if mode or armed status actually changed
                     if (mode != state.value.mode || armed != state.value.armed) {
                         _state.update { it.copy(armed = armed, mode = mode) }
-                        Log.d("MavlinkRepo", "Mode updated to: $mode, Armed: $armed")
+                        Log.i("MavlinkRepo", "🔄 State updated - Mode: $mode, Armed: $armed")
+                    } else {
+                        Log.d("MavlinkRepo", "No change - Mode: $mode, Armed: $armed")
                     }
 
                     // Arm/Disarm Notifications
