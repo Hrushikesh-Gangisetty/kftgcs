@@ -1397,6 +1397,11 @@ class SharedViewModel : ViewModel() {
                     )
                 }
 
+                // Mark mission as uploaded
+                _missionUploaded.value = true
+                lastUploadedCount = resequenced.size
+                Log.i("ResumeMission", "✅ Mission upload status updated: uploaded=$_missionUploaded, count=$lastUploadedCount")
+
                 // Complete
                 addNotification(
                     Notification(
