@@ -107,7 +107,8 @@ fun CompassCalibrationScreen(
                 compassProgress = uiState.compassProgress,
                 compassReports = uiState.compassReports,
                 overallProgress = uiState.overallProgress,
-                calibrationComplete = uiState.calibrationComplete
+                calibrationComplete = uiState.calibrationComplete,
+                viewModel = viewModel // Pass viewModel to content
             )
         }
 
@@ -199,7 +200,8 @@ private fun CompassCalibrationContent(
     compassProgress: Map<Int, CompassProgress>,
     compassReports: Map<Int, CompassReport>,
     overallProgress: Int,
-    calibrationComplete: Boolean
+    calibrationComplete: Boolean,
+    viewModel: CompassCalibrationViewModel // Receive viewModel as parameter
 ) {
     Column(
         modifier = Modifier
@@ -231,8 +233,9 @@ private fun CompassCalibrationContent(
                         calibrationComplete = calibrationComplete
                     )
                     is CompassCalibrationState.Success -> SuccessContent(
-                        calibrationState.message,
-                        calibrationState.compassReports
+                        message = calibrationState.message,
+                        compassReports = calibrationState.compassReports,
+                        viewModel = viewModel // Pass viewModel to SuccessContent
                     )
                     is CompassCalibrationState.Failed -> FailedContent(calibrationState.errorMessage)
                     is CompassCalibrationState.Cancelled -> CancelledContent()
@@ -649,7 +652,7 @@ private fun CompassReportCard(compassId: Int, report: CompassReport) {
 }
 
 @Composable
-private fun SuccessContent(message: String, compassReports: List<CompassReport>) {
+private fun SuccessContent(message: String, compassReports: List<CompassReport>, viewModel: CompassCalibrationViewModel) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
@@ -711,26 +714,54 @@ private fun SuccessContent(message: String, compassReports: List<CompassReport>)
             colors = CardDefaults.cardColors(containerColor = Color(0xFF2A5E20)),
             shape = RoundedCornerShape(8.dp)
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
+            Column(
+                modifier = Modifier.padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Icon(
-                    imageVector = Icons.Default.Refresh,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "Please reboot the autopilot",
-                    color = Color.White,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Please reboot the autopilot",
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Add Initiate Reboot button
+                Button(
+                    onClick = { viewModel.initiateReboot() },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.White,
+                        contentColor = Color(0xFF2A5E20)
+                    ),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Initiate Reboot",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
         }
     }

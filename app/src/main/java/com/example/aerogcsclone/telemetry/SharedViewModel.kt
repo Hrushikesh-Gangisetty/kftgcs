@@ -403,6 +403,33 @@ class SharedViewModel : ViewModel() {
     }
 
     /**
+     * Reboot the autopilot using MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN.
+     *
+     * Command: MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN (246)
+     * Param1: 1 = Reboot autopilot
+     * Param2-7: 0 (reserved)
+     */
+    suspend fun rebootAutopilot() {
+        Log.d("Calibration", "========== SENDING REBOOT COMMAND ==========")
+        try {
+            repo?.sendCommand(
+                MavCmd.PREFLIGHT_REBOOT_SHUTDOWN,
+                param1 = 1f, // 1 = Reboot autopilot
+                param2 = 0f, // Companion computer (0 = no action)
+                param3 = 0f, // Reserved
+                param4 = 0f, // Reserved
+                param5 = 0f, // Reserved
+                param6 = 0f, // Reserved
+                param7 = 0f  // Reserved
+            )
+            Log.d("Calibration", "✓ Reboot command sent successfully")
+        } catch (e: Exception) {
+            Log.e("Calibration", "❌ Failed to send reboot command", e)
+        }
+        Log.d("Calibration", "============================================")
+    }
+
+    /**
      * Request a parameter value from the autopilot by name.
      * The response will come via the paramValue flow.
      */

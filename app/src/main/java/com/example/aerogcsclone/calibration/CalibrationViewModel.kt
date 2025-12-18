@@ -401,6 +401,19 @@ class CalibrationViewModel(private val sharedViewModel: SharedViewModel) : ViewM
         _uiState.update { it.copy(showRebootDialog = false) }
     }
 
+    /**
+     * Initiate autopilot reboot after successful calibration.
+     * Sends MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN command.
+     */
+    fun initiateReboot() {
+        viewModelScope.launch {
+            Log.d("CalibrationVM", "User initiated reboot after calibration")
+            sharedViewModel.rebootAutopilot()
+            // Keep the dialog open so user knows reboot was sent
+            // They can dismiss it manually after seeing the drone reboot
+        }
+    }
+
     // Legacy method for compatibility with existing UI
     fun onNextPosition() {
         onPositionReady()

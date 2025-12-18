@@ -79,13 +79,22 @@ fun CalibrationScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        viewModel.dismissRebootDialog()
+                        viewModel.initiateReboot()
                     },
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.primary
                     )
                 ) {
-                    Text("OK")
+                    Text("Initiate Reboot")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.dismissRebootDialog()
+                    }
+                ) {
+                    Text("Later")
                 }
             }
         )

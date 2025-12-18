@@ -715,6 +715,17 @@ class CompassCalibrationViewModel(private val sharedViewModel: SharedViewModel) 
         }
     }
 
+    /**
+     * Initiate autopilot reboot after successful calibration.
+     * Sends MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN command.
+     */
+    fun initiateReboot() {
+        viewModelScope.launch {
+            Log.d("CompassCalVM", "User initiated reboot after compass calibration")
+            sharedViewModel.rebootAutopilot()
+        }
+    }
+
     override fun onCleared() {
         super.onCleared()
         stopAllListeners()
