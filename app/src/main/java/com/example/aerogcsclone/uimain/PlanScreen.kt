@@ -37,6 +37,7 @@ import com.google.android.gms.maps.CameraUpdateFactory
 import com.example.aerogcsclone.grid.*
 import com.example.aerogcsclone.telemetry.SharedViewModel
 import java.util.Locale
+import com.example.aerogcsclone.utils.AppStrings
 
 @Suppress("UnusedMaterial3ScaffoldPaddingParameter", "UNUSED_PARAMETER")
 @Composable
@@ -422,7 +423,7 @@ fun PlanScreen(
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Add Point")
+                        Text(AppStrings.addPoint)
                     }
 
                     // Save Mission button - now dark
@@ -443,7 +444,7 @@ fun PlanScreen(
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Save Mission")
+                        Text(AppStrings.saveMission)
                     }
 
                     // Upload Mission button - now dark
@@ -469,7 +470,7 @@ fun PlanScreen(
 
                                 telemetryViewModel.uploadMission(builtMission) { success, error ->
                                     if (success) {
-                                        Toast.makeText(context, "Grid mission uploaded", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, AppStrings.gridMissionUploaded, Toast.LENGTH_SHORT).show()
                                         // Publish planning points and grid/survey data to SharedViewModel only after successful upload
                                         val publishedPoints = gridResult?.waypoints?.map { it.position } ?: emptyList()
                                         telemetryViewModel.setPlanningWaypoints(publishedPoints)
@@ -483,7 +484,7 @@ fun PlanScreen(
                                             popUpTo(Screen.Plan.route) { inclusive = true }
                                         }
                                     } else {
-                                        Toast.makeText(context, error ?: "Failed to upload grid mission", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, error ?: AppStrings.failedToUploadGrid, Toast.LENGTH_SHORT).show()
                                     }
                                 }
 
@@ -554,7 +555,7 @@ fun PlanScreen(
 
                                 telemetryViewModel.uploadMission(builtMission) { success, error ->
                                      if (success) {
-                                         Toast.makeText(context, "Mission uploaded", Toast.LENGTH_SHORT).show()
+                                         Toast.makeText(context, AppStrings.missionUploadedSuccess, Toast.LENGTH_SHORT).show()
                                          // Publish planning points to SharedViewModel only after successful upload
                                          telemetryViewModel.setPlanningWaypoints(points.toList())
                                          coroutineScope.launch { telemetryViewModel.readMissionFromFcu() }
@@ -562,11 +563,11 @@ fun PlanScreen(
                                              popUpTo(Screen.Plan.route) { inclusive = true }
                                          }
                                      } else {
-                                         Toast.makeText(context, error ?: "Failed to upload mission", Toast.LENGTH_SHORT).show()
+                                         Toast.makeText(context, error ?: AppStrings.failedToUploadMission, Toast.LENGTH_SHORT).show()
                                      }
                                  }
                             } else {
-                                Toast.makeText(context, "No waypoints to upload", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, AppStrings.noWaypointsToUpload, Toast.LENGTH_SHORT).show()
                             }
                         },
                         enabled = if (isGridSurveyMode) gridResult?.waypoints?.isNotEmpty() == true else points.isNotEmpty(),
@@ -585,7 +586,7 @@ fun PlanScreen(
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Upload Mission")
+                        Text(AppStrings.uploadMissionBtn)
                     }
                 }
             }
@@ -1041,7 +1042,7 @@ fun PlanScreen(
                                 waypoints[index] = waypoint.copy(seq = index.toUShort())
                             }
 
-                            Toast.makeText(context, "Waypoint reordered", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, AppStrings.waypointReordered, Toast.LENGTH_SHORT).show()
                         }
                     },
                     onWaypointClick = { index ->

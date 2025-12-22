@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.example.aerogcsclone.R
 import com.example.aerogcsclone.navigation.Screen
+import com.example.aerogcsclone.utils.AppStrings
 
 @Composable
 fun SignupPage(modifier: Modifier = Modifier, navController: NavController, authViewModel: AuthViewModel) {
@@ -68,8 +69,8 @@ fun SignupPage(modifier: Modifier = Modifier, navController: NavController, auth
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
-                Text(text = "Signup with Pavaman", fontSize = 32.sp, color = Color.Black)
-                Text(text = "Create your custom mail and password", fontSize = 12.sp, color = Color.Black)
+                Text(text = AppStrings.signupWithPavaman, fontSize = 32.sp, color = Color.Black)
+                Text(text = AppStrings.createCustomCredentials, fontSize = 12.sp, color = Color.Black)
 
                 Spacer(modifier = Modifier.height(16.dp))
 
@@ -77,7 +78,7 @@ fun SignupPage(modifier: Modifier = Modifier, navController: NavController, auth
                     value = email,
                     onValueChange = { email = it },
 
-                    label = { Text(text = "Email") },
+                    label = { Text(text = AppStrings.email) },
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = Color.Black,
                         unfocusedTextColor = Color.Black,
@@ -95,7 +96,7 @@ fun SignupPage(modifier: Modifier = Modifier, navController: NavController, auth
                     value = password,
                     onValueChange = { password = it },
 
-                    label = { Text(text = "Password") },
+                    label = { Text(text = AppStrings.password) },
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = Color.Black,
                         unfocusedTextColor = Color.Black,
@@ -110,13 +111,13 @@ fun SignupPage(modifier: Modifier = Modifier, navController: NavController, auth
                 Spacer(modifier = Modifier.height(16.dp))
 
                 Button(onClick = { authViewModel.signup(email, password) }) {
-                    Text(text = "Create account", color = Color.Black)
+                    Text(text = AppStrings.createAccount, color = Color.Black)
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
 
                 TextButton(onClick = { navController.navigate(Screen.Login.route) }) {
-                    Text(text = "if already have an account, Login")
+                    Text(text = AppStrings.alreadyHaveAccount)
                 }
             }
         }

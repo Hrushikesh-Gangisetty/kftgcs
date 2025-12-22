@@ -20,6 +20,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import com.example.aerogcsclone.utils.AppStrings
 
 @Composable
 fun CalibrationScreen(
@@ -32,8 +33,8 @@ fun CalibrationScreen(
     if (uiState.showCancelDialog) {
         AlertDialog(
             onDismissRequest = { viewModel.showCancelDialog(false) },
-            title = { Text("Cancel Calibration?") },
-            text = { Text("Are you sure you want to cancel the calibration process?") },
+            title = { Text(AppStrings.cancelCalibrationQuestion) },
+            text = { Text(AppStrings.cancelCalibrationConfirm) },
             confirmButton = {
                 Button(
                     onClick = {
@@ -41,12 +42,12 @@ fun CalibrationScreen(
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) {
-                    Text("Yes, Cancel")
+                    Text(AppStrings.yesCancel)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { viewModel.showCancelDialog(false) }) {
-                    Text("Continue Calibration")
+                    Text(AppStrings.continueCal)
                 }
             }
         )
@@ -66,13 +67,13 @@ fun CalibrationScreen(
             },
             title = {
                 Text(
-                    "Reboot Your Drone",
+                    AppStrings.rebootYourDrone,
                     fontWeight = FontWeight.Bold
                 )
             },
             text = {
                 Text(
-                    "IMU calibration completed successfully!\n\nPlease reboot your drone for the calibration settings to take effect.",
+                    AppStrings.imuCalibrationCompleted,
                     textAlign = TextAlign.Center
                 )
             },
@@ -85,7 +86,7 @@ fun CalibrationScreen(
                         containerColor = MaterialTheme.colorScheme.primary
                     )
                 ) {
-                    Text("Initiate Reboot")
+                    Text(AppStrings.initiateReboot)
                 }
             },
             dismissButton = {
@@ -94,7 +95,7 @@ fun CalibrationScreen(
                         viewModel.dismissRebootDialog()
                     }
                 ) {
-                    Text("Later")
+                    Text(AppStrings.later)
                 }
             }
         )
@@ -209,13 +210,13 @@ private fun CalibrationHeader(onBackClick: () -> Unit) {
         IconButton(onClick = onBackClick) {
             Icon(
                 imageVector = Icons.Default.ArrowBack,
-                contentDescription = "Back",
+                contentDescription = AppStrings.back,
                 tint = Color.White
             )
         }
         Spacer(modifier = Modifier.width(8.dp))
         Text(
-            text = "Accelerometer Calibration",
+            text = AppStrings.accelerometerCalibration,
             style = MaterialTheme.typography.headlineSmall,
             color = Color.White,
             fontWeight = FontWeight.Bold
@@ -240,7 +241,7 @@ private fun CalibrationProgress(
             calibrationState !is CalibrationState.Cancelled
         ) {
             Text(
-                text = "Position ${currentPosition + 1} of $totalPositions",
+                text = "${AppStrings.position} ${currentPosition + 1} ${AppStrings.of} $totalPositions",
                 color = Color.White,
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Medium
@@ -298,7 +299,7 @@ private fun CalibrationContent(
                     is CalibrationState.Cancelled -> CancelledContent()
                     is CalibrationState.CompassCalibrating -> {
                         Text(
-                            text = "Compass Calibration in Progress...",
+                            text = AppStrings.compassCalInProgress,
                             color = Color.White,
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Medium
@@ -354,7 +355,7 @@ private fun IdleContent(isConnected: Boolean) {
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = if (isConnected) "✓ Connected" else "⚠ Not Connected",
+                    text = if (isConnected) AppStrings.connectedStatus else AppStrings.notConnected,
                     color = Color.White,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold
@@ -370,7 +371,7 @@ private fun IdleContent(isConnected: Boolean) {
         )
         Spacer(modifier = Modifier.height(16.dp))
         Text(
-            text = "Accelerometer Calibration",
+            text = AppStrings.accelerometerCalibration,
             color = Color.White,
             fontSize = 20.sp,
             textAlign = TextAlign.Center,
@@ -379,9 +380,9 @@ private fun IdleContent(isConnected: Boolean) {
         Spacer(modifier = Modifier.height(8.dp))
         Text(
             text = if (isConnected) {
-                "Ready to calibrate"
+                AppStrings.readyToCalibrate
             } else {
-                "Please connect to drone first"
+                AppStrings.pleaseConnectDroneFirst
             },
             color = Color.White.copy(alpha = 0.9f),
             fontSize = 14.sp,

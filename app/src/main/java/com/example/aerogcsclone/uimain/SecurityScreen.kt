@@ -20,11 +20,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.ui.platform.LocalContext
 import android.content.Context
 import android.widget.Toast
 import com.example.aerogcsclone.navigation.Screen
+import com.example.aerogcsclone.utils.AppStrings
+import androidx.core.content.edit
 
 @Composable
 fun SecurityScreen(navController: NavHostController) {
@@ -53,7 +55,7 @@ fun SecurityScreen(navController: NavHostController) {
             ) {
                 IconButton(onClick = { navController.navigate(Screen.Settings.route) }) {
                     Icon(
-                        imageVector = Icons.Filled.ArrowBack,
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = "Back",
                         tint = Color(0xFF87CEEB)
                     )
@@ -124,11 +126,11 @@ fun SecurityScreen(navController: NavHostController) {
                             if (pinInput.length == 4) {
                                 savePin(context, pinInput)
                                 savedPin = pinInput
-                                Toast.makeText(context, "PIN set", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, AppStrings.pinSet, Toast.LENGTH_SHORT).show()
                                 showPinDialog = false
                                 pinInput = ""
                             } else {
-                                Toast.makeText(context, "Please enter a 4-digit PIN", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, AppStrings.pleaseEnter4DigitPIN, Toast.LENGTH_SHORT).show()
                             }
                         }) {
                             Text("Confirm")
@@ -184,7 +186,7 @@ fun SecurityScreen(navController: NavHostController) {
 
 private fun savePin(context: Context, pin: String) {
     val prefs = context.getSharedPreferences("security_prefs", Context.MODE_PRIVATE)
-    prefs.edit().putString("pin", pin).apply()
+    prefs.edit { putString("pin", pin) }
 }
 
 private fun loadSavedPin(context: Context): String? {

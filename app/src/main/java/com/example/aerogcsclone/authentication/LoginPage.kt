@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.example.aerogcsclone.R
 import com.example.aerogcsclone.navigation.Screen
+import com.example.aerogcsclone.utils.AppStrings
 
 @Composable
 fun LoginPage(modifier: Modifier = Modifier, navController: NavController, authViewModel: AuthViewModel) {
@@ -82,15 +83,15 @@ fun LoginPage(modifier: Modifier = Modifier, navController: NavController, authV
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
-                Text(text = "Login with pavaman", fontSize = 32.sp, color = Color.Black)
-                Text(text = "Login with pavaman credentials", fontSize = 12.sp, color = Color.Black)
+                Text(text = AppStrings.loginWithPavaman, fontSize = 32.sp, color = Color.Black)
+                Text(text = AppStrings.loginCredentials, fontSize = 12.sp, color = Color.Black)
 
                 Spacer(modifier = Modifier.height(16.dp))
 
                 OutlinedTextField(
                     value = email,
                     onValueChange = { email = it },
-                    label = { Text(text = "Email") },
+                    label = { Text(text = AppStrings.email) },
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = Color.Black,
                         unfocusedTextColor = Color.Black,
@@ -107,7 +108,7 @@ fun LoginPage(modifier: Modifier = Modifier, navController: NavController, authV
                 OutlinedTextField(
                     value = password,
                     onValueChange = { password = it },
-                    label = { Text(text = "Password") },
+                    label = { Text(text = AppStrings.password) },
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = Color.Black,
                         unfocusedTextColor = Color.Black,
@@ -122,7 +123,7 @@ fun LoginPage(modifier: Modifier = Modifier, navController: NavController, authV
                 Spacer(modifier = Modifier.height(16.dp))
 
                 Button(onClick = { authViewModel.login(email, password) }) {
-                    Text(text = "Login", color = Color.Black)
+                    Text(text = AppStrings.login, color = Color.Black)
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -146,7 +147,7 @@ fun LoginPage(modifier: Modifier = Modifier, navController: NavController, authV
                         tint = Color.Unspecified
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = "Sign in with Google", fontSize = 14.sp)
+                    Text(text = AppStrings.signInWithGoogle, fontSize = 14.sp)
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))

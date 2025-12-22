@@ -31,7 +31,7 @@ import androidx.compose.ui.text.font.FontWeight
 import com.example.aerogcsclone.telemetry.SharedViewModel
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.text.style.TextOverflow
-
+import com.example.aerogcsclone.utils.AppStrings
 
 @Composable
 fun MainPage(
@@ -279,11 +279,11 @@ fun MainPage(
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                     ) {
-                        Text("OK", color = MaterialTheme.colorScheme.onPrimary)
+                        Text(AppStrings.ok, color = MaterialTheme.colorScheme.onPrimary)
                     }
                 },
                 title = {
-                    Text("Mission Completed!", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text(AppStrings.missionCompleted, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 },
                 text = {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -301,11 +301,11 @@ fun MainPage(
                             "%.2f L".format(litres)
                         } ?: "N/A"
 
-                        Text("Total time taken: $timeStr", style = MaterialTheme.typography.bodyLarge)
+                        Text("${AppStrings.totalTimeTaken}: $timeStr", style = MaterialTheme.typography.bodyLarge)
                         Spacer(modifier = Modifier.height(8.dp))
-                        Text("Total distance covered: $distStr", style = MaterialTheme.typography.bodyLarge)
+                        Text("${AppStrings.totalDistanceCovered}: $distStr", style = MaterialTheme.typography.bodyLarge)
                         Spacer(modifier = Modifier.height(8.dp))
-                        Text("Liquid consumed: $litresStr", style = MaterialTheme.typography.bodyLarge)
+                        Text("${AppStrings.liquidConsumed}: $litresStr", style = MaterialTheme.typography.bodyLarge)
                     }
                 }
             )
@@ -324,7 +324,7 @@ fun MainPage(
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                     ) {
-                        Text("Yes", color = MaterialTheme.colorScheme.onPrimary)
+                        Text(AppStrings.yes, color = MaterialTheme.colorScheme.onPrimary)
                     }
                 },
                 dismissButton = {
@@ -332,14 +332,14 @@ fun MainPage(
                         onClick = { showSplitPlanDialog = false },
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
                     ) {
-                        Text("No", color = MaterialTheme.colorScheme.onSecondary)
+                        Text(AppStrings.no, color = MaterialTheme.colorScheme.onSecondary)
                     }
                 },
                 title = {
-                    Text("Confirm Split Plan", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text(AppStrings.confirmSplitPlan, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 },
                 text = {
-                    Text("Are you sure you want to split the mission plan? This will pause the current mission and create a new split plan.", style = MaterialTheme.typography.bodyLarge)
+                    Text(AppStrings.splitPlanMessage, style = MaterialTheme.typography.bodyLarge)
                 }
             )
         }
@@ -360,7 +360,7 @@ fun MainPage(
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800))
                     ) {
-                        Text("Continue", color = Color.White)
+                        Text(AppStrings.continueTxt, color = Color.White)
                     }
                 },
                 dismissButton = {
@@ -368,31 +368,31 @@ fun MainPage(
                         onClick = { showResumeWarningDialog = false },
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
                     ) {
-                        Text("Cancel", color = MaterialTheme.colorScheme.onSecondary)
+                        Text(AppStrings.cancel, color = MaterialTheme.colorScheme.onSecondary)
                     }
                 },
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
                             Icons.Default.Warning,
-                            contentDescription = "Warning",
+                            contentDescription = AppStrings.warning,
                             tint = Color(0xFFFF9800),
                             modifier = Modifier.size(24.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Resume Mission Warning", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        Text(AppStrings.resumeMissionWarning, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     }
                 },
                 text = {
                     Column {
                         Text(
-                            "⚠️ Warning: This will reprogram your mission, arm the vehicle, and issue a takeoff command (for copters).",
+                            AppStrings.resumeWarningMessage,
                             style = MaterialTheme.typography.bodyLarge,
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            "The mission will be filtered to skip waypoints before the resume point while preserving DO commands.",
+                            AppStrings.resumeFilterMessage,
                             style = MaterialTheme.typography.bodyMedium
                         )
                     }
@@ -432,7 +432,7 @@ fun MainPage(
                                     if (!success) {
                                         Toast.makeText(
                                             context,
-                                            "Resume failed: ${error ?: "Unknown error"}",
+                                            "${AppStrings.resumeFailed}: ${error ?: AppStrings.unknownError}",
                                             Toast.LENGTH_LONG
                                         ).show()
                                     }
@@ -441,7 +441,7 @@ fun MainPage(
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                     ) {
-                        Text("Resume", color = MaterialTheme.colorScheme.onPrimary)
+                        Text(AppStrings.resume, color = MaterialTheme.colorScheme.onPrimary)
                     }
                 },
                 dismissButton = {
@@ -449,30 +449,30 @@ fun MainPage(
                         onClick = { showResumeWaypointDialog = false },
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
                     ) {
-                        Text("Cancel", color = MaterialTheme.colorScheme.onSecondary)
+                        Text(AppStrings.cancel, color = MaterialTheme.colorScheme.onSecondary)
                     }
                 },
                 title = {
-                    Text("Resume Mission At", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text(AppStrings.resumeMissionAt, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 },
                 text = {
                     Column {
                         Text(
-                            "Enter the waypoint number to resume from:",
+                            AppStrings.enterWaypointNumber,
                             style = MaterialTheme.typography.bodyLarge
                         )
                         Spacer(modifier = Modifier.height(12.dp))
                         OutlinedTextField(
                             value = waypointInput,
                             onValueChange = { waypointInput = it },
-                            label = { Text("Waypoint #") },
+                            label = { Text(AppStrings.waypoint) },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            "Default: Waypoint $defaultWaypoint (last auto waypoint)",
+                            "${AppStrings.defaultWaypoint} $defaultWaypoint ${AppStrings.lastAutoWaypoint}",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -488,7 +488,7 @@ fun MainPage(
                 onDismissRequest = { /* Cannot dismiss during operation */ },
                 confirmButton = { },
                 title = {
-                    Text("Resuming Mission...", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text(AppStrings.resumingMission, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 },
                 text = {
                     Column(
@@ -521,10 +521,8 @@ fun StatusPanel(
 ) {
     Surface(
         modifier = modifier
-            // Slightly larger but still compact: increase min/max width and height a bit
             .widthIn(min = 140.dp, max = 380.dp)
             .heightIn(min = 48.dp, max = 74.dp),
-        // Set 78% transparency (i.e., 78% transparent => 22% opacity)
         color = Color.Black.copy(alpha = 0.22f),
         shape = RoundedCornerShape(10.dp)
     ) {
@@ -537,7 +535,7 @@ fun StatusPanel(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
-                    "Alt: ${telemetryState.altitudeRelative ?: "N/A"}",
+                    "${AppStrings.alt}: ${telemetryState.altitudeRelative ?: "N/A"}",
                     color = Color.White,
                     fontSize = 11.sp,
                     modifier = Modifier.weight(0.95f),
@@ -545,7 +543,7 @@ fun StatusPanel(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    "Speed: ${telemetryState.formattedGroundspeed ?: "N/A"}",
+                    "${AppStrings.speedLabel}: ${telemetryState.formattedGroundspeed ?: "N/A"}",
                     color = Color.White,
                     fontSize = 11.sp,
                     modifier = Modifier.weight(0.95f),
@@ -553,7 +551,7 @@ fun StatusPanel(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    "Area: ${areaFormatted}",
+                    "${AppStrings.area}: ${areaFormatted}",
                     color = Color.White,
                     fontSize = 11.sp,
                     modifier = Modifier.weight(1.05f),
@@ -561,7 +559,7 @@ fun StatusPanel(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    "Flow: ${telemetryState.sprayTelemetry.formattedFlowRate ?: "N/A"}",
+                    "${AppStrings.flow}: ${telemetryState.sprayTelemetry.formattedFlowRate ?: "N/A"}",
                     color = Color.White,
                     fontSize = 11.sp,
                     modifier = Modifier.weight(0.7f),
@@ -576,11 +574,11 @@ fun StatusPanel(
             ) {
                 // Show waypoint info - display pause state or current waypoint
                 val waypointText = if (telemetryState.missionPaused) {
-                    "⏸ WP ${telemetryState.pausedAtWaypoint ?: "?"}"
+                    "⏸ ${AppStrings.wp} ${telemetryState.pausedAtWaypoint ?: "?"}"
                 } else if (telemetryState.currentWaypoint != null) {
-                    "WP: ${telemetryState.currentWaypoint}"
+                    "${AppStrings.wp}: ${telemetryState.currentWaypoint}"
                 } else {
-                    "WP: N/A"
+                    "${AppStrings.wp}: N/A"
                 }
                 Text(
                     waypointText,
@@ -598,7 +596,7 @@ fun StatusPanel(
                     "%02d:%02d".format(m, s)
                 } ?: "N/A"
                 Text(
-                    "Time: $timeStr",
+                    "${AppStrings.time}: $timeStr",
                     color = Color.White,
                     fontSize = 11.sp,
                     modifier = Modifier.weight(0.95f),
@@ -611,7 +609,7 @@ fun StatusPanel(
                     else "%.2f km".format(dist / 1000f)
                 } ?: "N/A"
                 Text(
-                    "Distance: $distStr",
+                    "${AppStrings.distance}: $distStr",
                     color = Color.White,
                     fontSize = 11.sp,
                     modifier = Modifier.weight(1.05f),
@@ -619,7 +617,7 @@ fun StatusPanel(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    "Consumed: ${telemetryState.sprayTelemetry.formattedConsumed ?: "N/A"}",
+                    "${AppStrings.consumed}: ${telemetryState.sprayTelemetry.formattedConsumed ?: "N/A"}",
                     color = Color.White,
                     fontSize = 11.sp,
                     modifier = Modifier.weight(0.7f),
@@ -658,13 +656,13 @@ fun FloatingButtons(
             ) {
                 Icon(
                     Icons.Default.PlayArrow,
-                    contentDescription = "Start Mission",
+                    contentDescription = AppStrings.start,
                     tint = Color.White,
                     modifier = Modifier.size(20.dp)
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = "Start",
+                    text = AppStrings.start,
                     color = Color.White,
                     fontSize = 9.sp,
                     fontWeight = FontWeight.Medium
@@ -684,13 +682,13 @@ fun FloatingButtons(
             ) {
                 Icon(
                     Icons.Default.CallSplit,
-                    contentDescription = "Split Plan",
+                    contentDescription = AppStrings.split,
                     tint = Color.White,
                     modifier = Modifier.size(20.dp)
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = if (splitPlanActive) "Resume" else "Split",
+                    text = if (splitPlanActive) AppStrings.resumeBtn else AppStrings.split,
                     color = Color.White,
                     fontSize = 9.sp,
                     fontWeight = FontWeight.Medium
@@ -710,13 +708,13 @@ fun FloatingButtons(
             ) {
                 Icon(
                     Icons.Default.Refresh,
-                    contentDescription = "Recenter",
+                    contentDescription = AppStrings.recenter,
                     tint = Color.White,
                     modifier = Modifier.size(20.dp)
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = "Recenter",
+                    text = AppStrings.recenter,
                     color = Color.White,
                     fontSize = 9.sp,
                     fontWeight = FontWeight.Medium
@@ -736,13 +734,13 @@ fun FloatingButtons(
             ) {
                 Icon(
                     Icons.Default.Map,
-                    contentDescription = "Toggle Map",
+                    contentDescription = AppStrings.mapType,
                     tint = Color.White,
                     modifier = Modifier.size(20.dp)
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = "Map Type",
+                    text = AppStrings.mapType,
                     color = Color.White,
                     fontSize = 9.sp,
                     fontWeight = FontWeight.Medium
@@ -784,13 +782,13 @@ fun PauseResumeButtons(
             ) {
                 Icon(
                     Icons.Default.Pause,
-                    contentDescription = "Pause Mission",
+                    contentDescription = AppStrings.pause,
                     tint = Color.White,
                     modifier = Modifier.size(20.dp)
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = "Pause",
+                    text = AppStrings.pause,
                     color = Color.White,
                     fontSize = 9.sp,
                     fontWeight = FontWeight.Medium
@@ -822,13 +820,13 @@ fun PauseResumeButtons(
             ) {
                 Icon(
                     Icons.Default.PlayArrow,
-                    contentDescription = "Resume Mission",
+                    contentDescription = AppStrings.resumeBtn,
                     tint = Color.White,
                     modifier = Modifier.size(20.dp)
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = "Resume",
+                    text = AppStrings.resumeBtn,
                     color = Color.White,
                     fontSize = 9.sp,
                     fontWeight = FontWeight.Medium

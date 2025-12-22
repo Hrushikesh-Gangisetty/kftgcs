@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.sp
 import com.example.aerogcsclone.database.MissionTemplateEntity
 import java.text.SimpleDateFormat
 import java.util.*
+import com.example.aerogcsclone.utils.AppStrings
 
 /**
  * Screen displaying saved mission plan templates with modern UI
@@ -88,13 +89,13 @@ fun PlotTemplatesScreen(
 
                         Column {
                             Text(
-                                text = "Saved Missions",
+                                text = AppStrings.savedMissions,
                                 color = Color.White,
                                 fontSize = 28.sp,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = "${templates.size} template${if (templates.size != 1) "s" else ""} available",
+                                text = "${templates.size} ${if (templates.size != 1) AppStrings.templatesAvailable else AppStrings.templateAvailable}",
                                 color = Color(0xFF87CEEB),
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.Medium
@@ -143,7 +144,7 @@ fun PlotTemplatesScreen(
                         Spacer(modifier = Modifier.height(32.dp))
 
                         Text(
-                            text = "No Mission Templates",
+                            text = AppStrings.noMissionTemplates,
                             color = Color.White,
                             fontSize = 24.sp,
                             fontWeight = FontWeight.Bold
@@ -152,7 +153,7 @@ fun PlotTemplatesScreen(
                         Spacer(modifier = Modifier.height(12.dp))
 
                         Text(
-                            text = "Create and save mission plans\nto access them quickly later",
+                            text = AppStrings.createAndSaveMissions,
                             color = Color.White.copy(alpha = 0.6f),
                             fontSize = 16.sp,
                             textAlign = TextAlign.Center,
@@ -184,14 +185,14 @@ fun PlotTemplatesScreen(
                                 Spacer(modifier = Modifier.width(16.dp))
                                 Column {
                                     Text(
-                                        text = "Quick Tip",
+                                        text = AppStrings.quickTip,
                                         color = Color(0xFFFFD700),
                                         fontSize = 14.sp,
                                         fontWeight = FontWeight.Bold
                                     )
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Text(
-                                        text = "Go to Plan screen to create your first mission template",
+                                        text = AppStrings.goToPlanScreen,
                                         color = Color.White.copy(alpha = 0.8f),
                                         fontSize = 13.sp,
                                         lineHeight = 18.sp
@@ -422,7 +423,7 @@ private fun EnhancedMissionTemplateCard(
                         )
                         Column {
                             Text(
-                                text = "Last Updated",
+                                text = AppStrings.lastUpdated,
                                 color = Color.White.copy(alpha = 0.5f),
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Medium
@@ -449,7 +450,7 @@ private fun EnhancedMissionTemplateCard(
                         )
                         Column {
                             Text(
-                                text = "Time",
+                                text = AppStrings.time,
                                 color = Color.White.copy(alpha = 0.5f),
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Medium
@@ -498,7 +499,7 @@ private fun EnhancedMissionTemplateCard(
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "Load Mission",
+                                text = AppStrings.loadMission,
                                 color = Color.Black,
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Bold
@@ -557,7 +558,7 @@ private fun EnhancedMissionTemplateCard(
             },
             title = {
                 Text(
-                    text = "Delete Mission Template?",
+                    text = AppStrings.deleteMissionTemplate,
                     color = Color.White,
                     fontWeight = FontWeight.Bold,
                     fontSize = 20.sp
@@ -566,7 +567,7 @@ private fun EnhancedMissionTemplateCard(
             text = {
                 Column {
                     Text(
-                        text = "Are you sure you want to delete this mission template?",
+                        text = AppStrings.deleteConfirmationMessage,
                         color = Color.White.copy(alpha = 0.8f),
                         fontSize = 15.sp,
                         lineHeight = 22.sp
@@ -582,13 +583,13 @@ private fun EnhancedMissionTemplateCard(
                             modifier = Modifier.padding(12.dp)
                         ) {
                             Text(
-                                text = "Project: ${template.projectName}",
+                                text = "${AppStrings.project}: ${template.projectName}",
                                 color = Color.White,
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Medium
                             )
                             Text(
-                                text = "Plot: ${template.plotName}",
+                                text = "${AppStrings.plot}: ${template.plotName}",
                                 color = Color.White.copy(alpha = 0.7f),
                                 fontSize = 12.sp
                             )
@@ -596,7 +597,7 @@ private fun EnhancedMissionTemplateCard(
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "This action cannot be undone.",
+                        text = AppStrings.undoneActionWarning,
                         color = Color(0xFFFF6B6B),
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Medium
@@ -624,7 +625,7 @@ private fun EnhancedMissionTemplateCard(
                             modifier = Modifier.size(18.dp)
                         )
                         Text(
-                            text = "Delete",
+                            text = AppStrings.delete,
                             fontWeight = FontWeight.Bold
                         )
                     }
@@ -643,7 +644,7 @@ private fun EnhancedMissionTemplateCard(
                     shape = RoundedCornerShape(10.dp)
                 ) {
                     Text(
-                        text = "Cancel",
+                        text = AppStrings.cancel,
                         fontWeight = FontWeight.Bold
                     )
                 }

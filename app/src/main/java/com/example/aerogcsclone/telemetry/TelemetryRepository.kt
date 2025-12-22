@@ -14,6 +14,8 @@ import com.divpundir.mavlink.definitions.ardupilotmega.MagCalProgress
 import com.divpundir.mavlink.definitions.common.MagCalReport
 import com.example.aerogcsclone.Telemetry.AppScope
 import com.example.aerogcsclone.Telemetry.TelemetryState
+
+import com.example.aerogcsclone.utils.AppStrings
 import com.example.aerogcsclone.telemetry.connections.MavConnectionProvider
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
@@ -747,9 +749,9 @@ class MavlinkTelemetryRepository(
                     // Arm/Disarm Notifications
                     if (lastArmed != null && armed != lastArmed) {
                         if (armed) {
-                            sharedViewModel.addNotification(Notification("Drone Armed", NotificationType.SUCCESS))
+                            sharedViewModel.addNotification(Notification(AppStrings.droneArmed, NotificationType.SUCCESS))
                         } else {
-                            sharedViewModel.addNotification(Notification("Drone Disarmed", NotificationType.INFO))
+                            sharedViewModel.addNotification(Notification(AppStrings.droneDisarmed, NotificationType.INFO))
                         }
                     }
 

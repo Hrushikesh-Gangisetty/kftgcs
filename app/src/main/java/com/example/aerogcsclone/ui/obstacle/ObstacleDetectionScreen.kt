@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.sp
 import com.example.aerogcsclone.obstacle.*
 import com.example.aerogcsclone.viewmodel.ObstacleDetectionViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
+import com.example.aerogcsclone.utils.AppStrings
 
 /**
  * UI Screen for Obstacle Detection and Mission Resume
@@ -50,7 +51,7 @@ fun ObstacleDetectionScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "Obstacle Detection",
+                text = AppStrings.obstacleDetection,
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color.White
@@ -59,7 +60,7 @@ fun ObstacleDetectionScreen(
             IconButton(onClick = onDismiss) {
                 Icon(
                     imageVector = Icons.Default.Close,
-                    contentDescription = "Close",
+                    contentDescription = AppStrings.close,
                     tint = Color.White
                 )
             }
@@ -125,12 +126,12 @@ fun StatusCard(status: ObstacleDetectionStatus, obstacle: ObstacleInfo?) {
             Column {
                 Text(
                     text = when (status) {
-                        ObstacleDetectionStatus.MONITORING -> "✅ Monitoring Active"
-                        ObstacleDetectionStatus.OBSTACLE_DETECTED -> "⚠️ Obstacle Detected!"
-                        ObstacleDetectionStatus.RTL_IN_PROGRESS -> "🏠 Returning Home"
-                        ObstacleDetectionStatus.READY_TO_RESUME -> "✈️ Ready to Resume"
-                        ObstacleDetectionStatus.RESUMING -> "🔄 Resuming Mission"
-                        else -> "⚪ Inactive"
+                        ObstacleDetectionStatus.MONITORING -> AppStrings.monitoringActive
+                        ObstacleDetectionStatus.OBSTACLE_DETECTED -> AppStrings.obstacleDetected
+                        ObstacleDetectionStatus.RTL_IN_PROGRESS -> AppStrings.returningHome
+                        ObstacleDetectionStatus.READY_TO_RESUME -> AppStrings.readyToResume
+                        ObstacleDetectionStatus.RESUMING -> AppStrings.resumingMissionStatus
+                        else -> AppStrings.inactive
                     },
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
@@ -140,7 +141,7 @@ fun StatusCard(status: ObstacleDetectionStatus, obstacle: ObstacleInfo?) {
                 if (obstacle != null) {
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Distance: ${obstacle.distance.toInt()}m - ${obstacle.threatLevel}",
+                        text = "${AppStrings.distanceLabel}: ${obstacle.distance.toInt()}m - ${obstacle.threatLevel}",
                         fontSize = 14.sp,
                         color = Color.White.copy(alpha = 0.8f)
                     )

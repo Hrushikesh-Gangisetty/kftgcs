@@ -25,6 +25,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FlightTakeoff
 import androidx.compose.ui.unit.Dp
+import com.example.aerogcsclone.utils.AppStrings
 
 @Composable
 fun SelectFlyingMethodScreen(navController: NavController, sharedViewModel: SharedViewModel) {
@@ -53,7 +54,7 @@ fun SelectFlyingMethodScreen(navController: NavController, sharedViewModel: Shar
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
-                // Header like LogsScreen (centered)
+                // Header
                 Row(
                     modifier = Modifier.wrapContentWidth(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -76,20 +77,27 @@ fun SelectFlyingMethodScreen(navController: NavController, sharedViewModel: Shar
                     Spacer(modifier = Modifier.width(12.dp))
 
                     Column {
-                        Text("Select Flying Method", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                        Text("Choose how you'd like to fly", color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp)
+                        Text(AppStrings.selectFlightMode, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            if (AppStrings.getCurrentLanguage() == "en")
+                                "Choose how you'd like to fly"
+                            else
+                                "మీరు ఎలా ఎగరాలనుకుంటున్నారో ఎంచుకోండి",
+                            color = Color.White.copy(alpha = 0.6f),
+                            fontSize = 12.sp
+                        )
                     }
                 }
 
                 Spacer(modifier = Modifier.height(28.dp))
 
                 Row(
-                    modifier = Modifier.wrapContentWidth(), // wrap so the row itself is centered
+                    modifier = Modifier.wrapContentWidth(),
                     horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     StyledFlyingMethodCard(
-                        icon = { Image(painter = painterResource(id = R.drawable.autonomous), contentDescription = "Automatic", modifier = Modifier.size(64.dp)) },
-                        label = "Automatic",
+                        icon = { Image(painter = painterResource(id = R.drawable.autonomous), contentDescription = AppStrings.automatic, modifier = Modifier.size(64.dp)) },
+                        label = AppStrings.automatic,
                         onClick = {
                             sharedViewModel.announceSelectedAutomatic()
                             navController.navigate(Screen.Main.route)
@@ -97,8 +105,8 @@ fun SelectFlyingMethodScreen(navController: NavController, sharedViewModel: Shar
                     )
 
                     StyledFlyingMethodCard(
-                        icon = { Image(painter = painterResource(id = R.drawable.manual), contentDescription = "Manual", modifier = Modifier.size(64.dp)) },
-                        label = "Manual",
+                        icon = { Image(painter = painterResource(id = R.drawable.manual), contentDescription = AppStrings.manual, modifier = Modifier.size(64.dp)) },
+                        label = AppStrings.manual,
                         onClick = {
                             sharedViewModel.announceSelectedManual()
                             navController.navigate(Screen.Main.route)
@@ -108,7 +116,7 @@ fun SelectFlyingMethodScreen(navController: NavController, sharedViewModel: Shar
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                Text("You can change this later from settings.", color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp)
+                Text(AppStrings.changeLanguageLater, color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp)
             }
         }
     }

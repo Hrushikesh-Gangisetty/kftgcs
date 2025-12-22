@@ -7,6 +7,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -27,6 +29,7 @@ import com.example.aerogcsclone.authentication.AuthViewModel
 import com.example.aerogcsclone.navigation.Screen
 import com.example.aerogcsclone.telemetry.SharedViewModel
 import android.util.Log
+import com.example.aerogcsclone.utils.AppStrings
 
 @Composable
 fun TopNavBar(
@@ -99,7 +102,7 @@ fun TopNavBar(
             Box {
                 Icon(
                     Icons.Default.Menu,
-                    contentDescription = "Menu",
+                    contentDescription = AppStrings.menu,
                     tint = Color.White,
                     modifier = Modifier.clickable { menuExpanded = true }
                 )
@@ -112,11 +115,11 @@ fun TopNavBar(
                             .background(Color(0xFF23232B).copy(alpha = 0.85f))
                     ) {
                         DropdownMenuItem(
-                            text = { Text("Plan Mission", color = Color.White) },
+                            text = { Text(AppStrings.planMission, color = Color.White) },
                             leadingIcon = {
                                 Icon(
                                     imageVector = Icons.Default.Map,
-                                    contentDescription = "Plan Mission",
+                                    contentDescription = AppStrings.planMission,
                                     tint = Color.White,
                                     modifier = Modifier.size(18.dp)
                                 )
@@ -127,11 +130,11 @@ fun TopNavBar(
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text("Plot Templates", color = Color.White) },
+                            text = { Text(AppStrings.plotTemplates, color = Color.White) },
                             leadingIcon = {
                                 Icon(
                                     imageVector = Icons.Default.FileCopy,
-                                    contentDescription = "Plot Templates",
+                                    contentDescription = AppStrings.plotTemplates,
                                     tint = Color.White,
                                     modifier = Modifier.size(18.dp)
                                 )
@@ -142,11 +145,11 @@ fun TopNavBar(
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text("Reconnect", color = Color.White) },
+                            text = { Text(AppStrings.reconnect, color = Color.White) },
                             leadingIcon = {
                                 Icon(
                                     imageVector = Icons.Default.Refresh,
-                                    contentDescription = "Reconnect",
+                                    contentDescription = AppStrings.reconnect,
                                     tint = Color.White,
                                     modifier = Modifier.size(18.dp)
                                 )
@@ -169,7 +172,7 @@ fun TopNavBar(
             // Home icon
             Icon(
                 Icons.Default.Home,
-                contentDescription = "Home",
+                contentDescription = AppStrings.home,
                 tint = Color.White,
                 modifier = Modifier.clickable {
                     navController.navigate(Screen.SelectMethod.route)
@@ -185,7 +188,7 @@ fun TopNavBar(
             ) {
                 Spacer(modifier = Modifier.height(10.dp))
                 Text(
-                    text = "Pavaman Aviation",
+                    text = AppStrings.pavamanAviation,
                     color = Color.White,
                     fontWeight = FontWeight.Bold,
                     fontSize = 25.sp
@@ -202,7 +205,7 @@ fun TopNavBar(
                 // Spray icon
                 Icon(
                     Icons.Default.Shower,
-                    contentDescription = "Spray",
+                    contentDescription = AppStrings.spray,
                     tint = Color.White,
                     modifier = Modifier
                         .size(24.dp)
@@ -218,13 +221,13 @@ fun TopNavBar(
                 ) {
                     Icon(
                         Icons.Default.Fence,
-                        contentDescription = "Geofence",
+                        contentDescription = AppStrings.geofence,
                         tint = if (geofenceEnabled) Color.Green else Color.White,
                         modifier = Modifier.size(13.dp)
                     )
                     Spacer(modifier = Modifier.height(1.dp))
                     Text(
-                        if (geofenceEnabled) "ON" else "OFF",
+                        if (geofenceEnabled) AppStrings.on else AppStrings.off,
                         color = if (geofenceEnabled) Color.Green else Color.White,
                         fontSize = 9.sp
                     )
@@ -252,14 +255,14 @@ fun TopNavBar(
                 DividerBlock()
                 InfoBlockGroup(
                     Icons.Default.Sync,
-                    listOf(displayMode, if (telemetryState.armed) "Armed" else "Disarmed")
+                    listOf(displayMode, if (telemetryState.armed) AppStrings.armed else AppStrings.disarmed)
                 )
                 DividerBlock()
 
                 // Notification Icon
                 Icon(
                     imageVector = Icons.Default.Notifications,
-                    contentDescription = "Notifications",
+                    contentDescription = AppStrings.notifications,
                     tint = Color.White,
                     modifier = Modifier.clickable { onToggleNotificationPanel() }
                 )
@@ -269,7 +272,7 @@ fun TopNavBar(
                 Box {
                     Icon(
                         Icons.Default.MoreVert,
-                        contentDescription = "More",
+                        contentDescription = AppStrings.more,
                         tint = Color.White,
                         modifier = Modifier.clickable { kebabMenuExpanded = true }
                     )
@@ -278,11 +281,11 @@ fun TopNavBar(
                         onDismissRequest = { kebabMenuExpanded = false }
                     ) {
                         DropdownMenuItem(
-                            text = { Text("Logs") },
+                            text = { Text(AppStrings.logs) },
                             leadingIcon = {
                                 Icon(
-                                    imageVector = Icons.Default.List,
-                                    contentDescription = "Logs",
+                                    imageVector = Icons.AutoMirrored.Filled.List,
+                                    contentDescription = AppStrings.logs,
                                     tint = Color.White,
                                     modifier = Modifier.size(18.dp)
                                 )
@@ -293,11 +296,11 @@ fun TopNavBar(
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text("Settings") },
+                            text = { Text(AppStrings.settings) },
                             leadingIcon = {
                                 Icon(
                                     imageVector = Icons.Default.Settings,
-                                    contentDescription = "Settings",
+                                    contentDescription = AppStrings.settings,
                                     tint = Color.White,
                                     modifier = Modifier.size(18.dp)
                                 )
@@ -308,11 +311,11 @@ fun TopNavBar(
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text("Disconnect") },
+                            text = { Text(AppStrings.disconnect) },
                             leadingIcon = {
                                 Icon(
                                     imageVector = Icons.Default.LinkOff,
-                                    contentDescription = "Disconnect",
+                                    contentDescription = AppStrings.disconnect,
                                     tint = Color.White,
                                     modifier = Modifier.size(18.dp)
                                 )
@@ -328,11 +331,11 @@ fun TopNavBar(
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text("Logout") },
+                            text = { Text(AppStrings.logout) },
                             leadingIcon = {
                                 Icon(
-                                    imageVector = Icons.Default.Logout,
-                                    contentDescription = "Logout",
+                                    imageVector = Icons.AutoMirrored.Filled.Logout,
+                                    contentDescription = AppStrings.logout,
                                     tint = Color.White,
                                     modifier = Modifier.size(18.dp)
                                 )
@@ -368,13 +371,13 @@ fun TopNavBar(
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Text(
-                            "Geofence Settings",
+                            AppStrings.geofenceSettings,
                             color = Color.White,
                             fontWeight = FontWeight.Bold,
                             fontSize = 18.sp
                         )
 
-                        Divider(color = Color.White.copy(alpha = 0.3f))
+                        HorizontalDivider(color = Color.White.copy(alpha = 0.3f))
 
                         // Geofence Enable/Disable Toggle
                         Row(
@@ -382,7 +385,7 @@ fun TopNavBar(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                "Enable Geofence",
+                                AppStrings.enableGeofence,
                                 color = Color.White,
                                 modifier = Modifier.weight(1f),
                                 fontWeight = FontWeight.Bold
@@ -402,14 +405,14 @@ fun TopNavBar(
                         // Status text based on geofence state
                         if (geofenceEnabled) {
                             Text(
-                                "Polygon fence active around mission plan",
+                                AppStrings.polygonFenceActive,
                                 color = Color.Green,
                                 style = MaterialTheme.typography.bodySmall,
                                 modifier = Modifier.padding(top = 4.dp)
                             )
                         } else {
                             Text(
-                                "Geofence disabled",
+                                AppStrings.geofenceDisabled,
                                 color = Color.Red,
                                 style = MaterialTheme.typography.bodySmall,
                                 modifier = Modifier.padding(top = 4.dp)
@@ -420,7 +423,7 @@ fun TopNavBar(
                         if (geofenceEnabled) {
                             Column(modifier = Modifier.padding(vertical = 4.dp)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text("Buffer Distance", color = Color.White, modifier = Modifier.weight(1f))
+                                    Text(AppStrings.bufferDistance, color = Color.White, modifier = Modifier.weight(1f))
                                     Text("${fenceRadius.toInt()} m", color = Color.White, fontWeight = FontWeight.Bold)
                                 }
                                 Slider(
@@ -436,7 +439,7 @@ fun TopNavBar(
                                     )
                                 )
                                 Text(
-                                    "Adjust polygon buffer distance around mission plan",
+                                    AppStrings.adjustPolygonBuffer,
                                     color = Color.Gray,
                                     style = MaterialTheme.typography.bodySmall,
                                     modifier = Modifier.padding(top = 2.dp)
@@ -466,7 +469,7 @@ fun TopNavBar(
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Text(
-                            "Spray Settings",
+                            AppStrings.spraySettings,
                             color = Color.White,
                             fontWeight = FontWeight.Bold,
                             fontSize = 18.sp
@@ -480,7 +483,7 @@ fun TopNavBar(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                "Enable Spray",
+                                AppStrings.enableSpray,
                                 color = Color.White,
                                 modifier = Modifier.weight(1f),
                                 fontWeight = FontWeight.Bold
@@ -500,14 +503,14 @@ fun TopNavBar(
                         // Status text based on spray state
                         if (sprayEnabled) {
                             Text(
-                                "Spray active",
+                                AppStrings.sprayActive,
                                 color = Color.Green,
                                 style = MaterialTheme.typography.bodySmall,
                                 modifier = Modifier.padding(top = 4.dp)
                             )
                         } else {
                             Text(
-                                "Spray inactive",
+                                AppStrings.sprayInactive,
                                 color = Color.Red,
                                 style = MaterialTheme.typography.bodySmall,
                                 modifier = Modifier.padding(top = 4.dp)
@@ -518,7 +521,7 @@ fun TopNavBar(
                         if (sprayEnabled) {
                             Column(modifier = Modifier.padding(vertical = 4.dp)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text("Spray Rate", color = Color.White, modifier = Modifier.weight(1f))
+                                    Text(AppStrings.sprayRate, color = Color.White, modifier = Modifier.weight(1f))
                                     Text("${sprayRate.toInt()} %", color = Color.White, fontWeight = FontWeight.Bold)
                                 }
                                 Slider(
@@ -534,7 +537,7 @@ fun TopNavBar(
                                     )
                                 )
                                 Text(
-                                    "Adjust spray intensity",
+                                    AppStrings.adjustSprayIntensity,
                                     color = Color.Gray,
                                     style = MaterialTheme.typography.bodySmall,
                                     modifier = Modifier.padding(top = 2.dp)
@@ -551,7 +554,7 @@ fun TopNavBar(
 @Composable
 fun ConnectionStatusWidget(isConnected: Boolean) {
     val statusColor = if (isConnected) Color.Green else Color.Red
-    val statusText = if (isConnected) "Connected" else "Disconnected"
+    val statusText = if (isConnected) AppStrings.connected else AppStrings.disconnected
 
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(
