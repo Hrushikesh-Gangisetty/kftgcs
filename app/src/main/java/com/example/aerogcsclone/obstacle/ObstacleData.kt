@@ -98,7 +98,7 @@ data class ObstacleDetectionConfig(
     val maxDetectionRange: Float = 50f,         // Maximum detection range (meters)
     val lowThreatThreshold: Float = 20f,        // LOW threat starts at 20m
     val mediumThreatThreshold: Float = 10f,     // MEDIUM threat starts at 10m
-    val highThreatThreshold: Float = 10f,       // HIGH threat below 10m
+    val highThreatThreshold: Float = 5f,        // HIGH threat below 5m (FIXED: was 10f)
     val detectionIntervalMs: Long = 100,        // Check every 100ms
     val minimumConsecutiveDetections: Int = 3,  // Require 3 consecutive HIGH detections
     val angleToleranceDegrees: Float = 30f,     // ±30° to consider obstacle "in front"
@@ -154,4 +154,3 @@ enum class MissionStatus {
     FAILED,
     CANCELLED
 }
-

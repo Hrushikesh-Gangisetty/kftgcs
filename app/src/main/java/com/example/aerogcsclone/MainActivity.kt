@@ -81,6 +81,26 @@ class MainActivity : ComponentActivity() {
                 sharedViewModel.initializeTextToSpeech(this@MainActivity)
             }
 
+            // Monitor flight status for crash handler
+            LaunchedEffect(Unit) {
+                sharedViewModel.telemetryState.collect { telemetryState ->
+                    // Update connection status
+                    GCSApplication.isConnectedToDrone = telemetryState.connected
+
+                    // Determine if drone is in flight
+                    val isArmed = telemetryState.armed
+                    val altitude = telemetryState.altitudeRelative ?: 0f
+                    val isInAir = altitude > 0.5f // Consider drone in flight if >0.5m altitude
+
+                    GCSApplication.isDroneInFlight = isArmed && isInAir
+
+                    // Log status changes for debugging
+                    if (GCSApplication.isDroneInFlight) {
+                        android.util.Log.d("MainActivity", "Drone in flight - crash protection active (Alt: ${altitude}m)")
+                    }
+                }
+            }
+
             // Hide the system status bar for immersive experience
             SideEffect {
                 systemUiController.isStatusBarVisible = false

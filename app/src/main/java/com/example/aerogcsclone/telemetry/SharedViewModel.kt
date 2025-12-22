@@ -17,6 +17,7 @@ import com.divpundir.mavlink.definitions.common.MavCmd
 import com.divpundir.mavlink.definitions.common.MavResult
 import com.divpundir.mavlink.definitions.common.MissionItemInt
 import com.divpundir.mavlink.definitions.common.Statustext
+import com.example.aerogcsclone.GCSApplication
 import com.example.aerogcsclone.Telemetry.TelemetryState
 //import com.example.aerogcsclone.Telemetry.connections.BluetoothConnectionProvider
 //import com.example.aerogcsclone.Telemetry.connections.MavConnectionProvider
@@ -63,6 +64,11 @@ class SharedViewModel : ViewModel() {
 
     // TextToSpeech manager for voice announcements
     private var ttsManager: TextToSpeechManager? = null
+
+    init {
+        // Setup emergency RTL callback for crash handler
+        setupEmergencyRTLCallback()
+    }
 
     // Initialize TTS with context
     fun initializeTextToSpeech(context: Context) {
@@ -524,6 +530,8 @@ class SharedViewModel : ViewModel() {
             val newRepo = MavlinkTelemetryRepository(provider, this@SharedViewModel)
             repo = newRepo
             newRepo.start()
+            DisconnectionRTLHandler.startMonitoring(_telemetryState, newRepo, viewModelScope)
+
             viewModelScope.launch {
                 newRepo.state.collect { repoState ->
                     // Preserve SharedViewModel-managed fields (pause state) while updating from repository
@@ -1598,12 +1606,8 @@ class SharedViewModel : ViewModel() {
         viewModelScope.launch {
             try {
                 // Set BATT2_AMP_PERVLT parameter
-                val result = setParameter("BATT2_AMP_PERVLT", calibrationFactor)
-                if (result != null) {
-                    Log.i("FlowSensorCal", "Calibration factor sent to autopilot successfully: ${result.paramValue}")
-                } else {
-                    Log.w("FlowSensorCal", "No confirmation received from autopilot for calibration factor")
-                }
+                setParameter("BATT2_AMP_PERVLT", calibrationFactor)
+                Log.i("FlowSensorCal", "✓ Calibration factor sent to autopilot")
             } catch (e: Exception) {
                 Log.e("FlowSensorCal", "Error sending calibration factor to autopilot", e)
             }
@@ -1612,6 +1616,40 @@ class SharedViewModel : ViewModel() {
         Log.i("FlowSensorCal", "Flow sensor calibration updated successfully")
     }
 
+    /**
+     * Setup callback for emergency RTL triggered by app crash
+     */
+    private fun setupEmergencyRTLCallback() {
+        GCSApplication.onTriggerEmergencyRTL = {
+            try {
+                // Use runBlocking to ensure RTL command is sent before app dies
+                kotlinx.coroutines.runBlocking {
+                    triggerEmergencyRTL()
+                }
+            } catch (e: Exception) {
+                Log.e("SharedVM", "Error in emergency RTL callback", e)
+            }
+        }
+    }
+
+    /**
+     * Trigger emergency RTL - called when app crashes during flight
+     * This sends the RTL command synchronously to ensure it's sent before app termination
+     */
+    suspend fun triggerEmergencyRTL() {
+        Log.w("SharedVM", "🚨 TRIGGERING EMERGENCY RTL 🚨")
+        try {
+            repo?.let { repository ->
+                // Send RTL mode change command (mode 6 = RTL for ArduPilot)
+                repository.changeMode(6u)
+                Log.i("SharedVM", "✓ Emergency RTL command sent to drone")
+            } ?: run {
+                Log.e("SharedVM", "❌ Cannot send RTL - repository is null")
+            }
+        } catch (e: Exception) {
+            Log.e("SharedVM", "❌ Failed to send emergency RTL command", e)
+        }
+    }
 
     // Expose FCU system and component IDs for mission building
     fun getFcuSystemId(): UByte = repo?.fcuSystemId ?: 0u
@@ -1625,6 +1663,7 @@ class SharedViewModel : ViewModel() {
                 Log.e("SharedVM", "Error closing connection", e)
             }
         }
+        DisconnectionRTLHandler.stopMonitoring()
         repo = null
         _telemetryState.value = TelemetryState()
     }
@@ -1950,7 +1989,6 @@ class SharedViewModel : ViewModel() {
             )
         }
     }
-
 
     private fun switchToRTL() {
         viewModelScope.launch {
