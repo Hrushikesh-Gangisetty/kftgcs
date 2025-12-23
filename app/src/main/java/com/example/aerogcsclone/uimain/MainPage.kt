@@ -252,8 +252,19 @@ fun MainPage(
 
                 Log.i("MainPage", "✅ Mission completed - Time: ${lastMissionTime}s, Distance: ${lastMissionDistance}m, Litres: ${lastLitresConsumed}L")
 
-                // Show popup immediately
-                missionJustCompleted = true
+                // Only show popup if mission actually ran for meaningful duration
+                // Validate that at least one of the following is true:
+                // 1. Mission ran for at least 5 seconds
+                // 2. Distance covered is at least 5 meters
+                val missionTimeValid = (lastMissionTime ?: 0L) >= 5
+                val distanceValid = (lastMissionDistance ?: 0f) >= 5f
+
+                if (missionTimeValid || distanceValid) {
+                    Log.i("MainPage", "✅ Mission data valid - showing completion dialog")
+                    missionJustCompleted = true
+                } else {
+                    Log.w("MainPage", "⚠️ Mission completed but no meaningful data captured - skipping dialog")
+                }
             }
 
             prevMissionCompleted = telemetryState.missionCompleted

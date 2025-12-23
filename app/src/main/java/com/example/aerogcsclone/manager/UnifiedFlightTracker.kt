@@ -314,8 +314,10 @@ class UnifiedFlightTracker(
         // 2. AUTO-only: mission completed (last item reached)
         if (missionMode == MissionMode.AUTO) {
             // Check if mission is complete (mode changed from AUTO or mission ended)
+            // BUT IGNORE mode change if mission is paused (paused missions go to LOITER)
             if (telemetry.mode?.equals("Auto", ignoreCase = true) == false &&
-                previousMode?.equals("Auto", ignoreCase = true) == true) {
+                previousMode?.equals("Auto", ignoreCase = true) == true &&
+                !telemetry.missionPaused) {  // Don't treat pause as mission completion
                 return "Mission completed - exited AUTO mode"
             }
         }

@@ -799,11 +799,23 @@ class MavlinkTelemetryRepository(
                             }
                         } else if ((lastMode?.equals("Auto", ignoreCase = true) == true && mode != "Auto") ||
                             (lastArmed == true && armed == false && mode.equals("Auto", ignoreCase = true))) {
-                            // Mission ended (either mode changed from Auto, or drone disarmed in Auto)
-                            missionTimerJob?.cancel()
-                            missionTimerJob = null
-                            val lastElapsed = state.value.missionElapsedSec
-                            _state.update { it.copy(missionElapsedSec = null, missionCompleted = true, lastMissionElapsedSec = lastElapsed) }
+                            // Check if mission is paused - if so, DON'T mark as completed
+                            val isPaused = state.value.missionPaused
+
+                            if (!isPaused) {
+                                // Mission ended (either mode changed from Auto, or drone disarmed in Auto)
+                                // Only mark as completed if NOT paused
+                                missionTimerJob?.cancel()
+                                missionTimerJob = null
+                                val lastElapsed = state.value.missionElapsedSec
+                                _state.update { it.copy(missionElapsedSec = null, missionCompleted = true, lastMissionElapsedSec = lastElapsed) }
+                                Log.i("TelemetryRepo", "Mission completed - elapsed: ${lastElapsed}s")
+                            } else {
+                                // Mission paused - keep timer frozen but don't mark as completed
+                                missionTimerJob?.cancel()
+                                missionTimerJob = null
+                                Log.i("TelemetryRepo", "Mission paused - keeping timer frozen, NOT marking as completed")
+                            }
                         }
                         lastMode = mode
                         lastArmed = armed
