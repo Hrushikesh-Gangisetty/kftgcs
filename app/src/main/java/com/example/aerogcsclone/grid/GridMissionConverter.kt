@@ -9,12 +9,17 @@ import com.google.android.gms.maps.model.LatLng
  */
 object GridMissionConverter {
 
+    // MAV_CMD_DO_SPRAYER command ID (not available in library, using raw value)
+    // param1: 0 = stop spraying, 1 = start spraying
+    private const val MAV_CMD_DO_SPRAYER = 216u
+
     /**
      * Convert grid waypoints to MAVLink mission items
      * @param gridResult Grid survey result from GridGenerator
      * @param homePosition Home position for mission
      * @param holdNosePosition If true, adds MAV_CMD_CONDITION_YAW to maintain yaw throughout mission
      * @param initialYaw Initial yaw angle in degrees (0-360, 0=North, 90=East)
+     * @param autoSpray If true, adds DO_SPRAYER commands at start/end of each survey line
      * @param fcuSystemId Target FCU system ID (defaults to 0 for compatibility)
      * @param fcuComponentId Target FCU component ID (defaults to 0 for compatibility)
      * @return List of MAVLink MissionItemInt objects
@@ -24,6 +29,7 @@ object GridMissionConverter {
         homePosition: LatLng,
         holdNosePosition: Boolean = false,
         initialYaw: Float = 0f,
+        autoSpray: Boolean = false,
         fcuSystemId: UByte = 0u,
         fcuComponentId: UByte = 0u
     ): List<MissionItemInt> {
@@ -101,6 +107,55 @@ object GridMissionConverter {
 
         // Convert grid waypoints to mission items (starting from seq=2 or seq=3 if holdNosePosition)
         gridResult.waypoints.forEach { waypoint ->
+            val currentLineIndex = waypoint.lineIndex
+
+            // Check if we're starting a new survey line - add sprayer commands
+            if (autoSpray && currentLineIndex != lastLineIndex) {
+                // If we were on a previous line, STOP spraying first (at end of previous line)
+                if (lastLineIndex >= 0) {
+                    missionItems.add(
+                        MissionItemInt(
+                            targetSystem = fcuSystemId,
+                            targetComponent = fcuComponentId,
+                            seq = sequenceNumber.toUShort(),
+                            frame = MavEnumValue.of(MavFrame.MISSION),
+                            command = MavEnumValue.fromValue(MAV_CMD_DO_SPRAYER),  // MAV_CMD_DO_SPRAYER = 216
+                            current = 0u,
+                            autocontinue = 1u,
+                            param1 = 0f,  // 0 = STOP spraying
+                            param2 = 0f,
+                            param3 = 0f,
+                            param4 = 0f,
+                            x = 0,
+                            y = 0,
+                            z = 0f
+                        )
+                    )
+                    sequenceNumber++
+                }
+
+                // START spraying at beginning of new line
+                missionItems.add(
+                    MissionItemInt(
+                        targetSystem = fcuSystemId,
+                        targetComponent = fcuComponentId,
+                        seq = sequenceNumber.toUShort(),
+                        frame = MavEnumValue.of(MavFrame.MISSION),
+                        command = MavEnumValue.fromValue(MAV_CMD_DO_SPRAYER),  // MAV_CMD_DO_SPRAYER = 216
+                        current = 0u,
+                        autocontinue = 1u,
+                        param1 = 1f,  // 1 = START spraying
+                        param2 = 0f,
+                        param3 = 0f,
+                        param4 = 0f,
+                        x = 0,
+                        y = 0,
+                        z = 0f
+                    )
+                )
+                sequenceNumber++
+            }
+
             // For the first waypoint after takeoff, add speed command BEFORE the waypoint
             // This ensures we have NAV_WAYPOINT -> DO_CHANGE_SPEED -> NAV_WAYPOINT sequence
             if (isFirstWaypoint && waypoint.speed != null) {
@@ -147,8 +202,10 @@ object GridMissionConverter {
                     )
                 )
                 sequenceNumber++
-                lastLineIndex = waypoint.lineIndex
             }
+
+            // Update lastLineIndex after processing sprayer/speed commands but before adding waypoint
+            lastLineIndex = currentLineIndex
 
             // Add the actual waypoint
             missionItems.add(
@@ -174,6 +231,29 @@ object GridMissionConverter {
             if (isFirstWaypoint) {
                 isFirstWaypoint = false
             }
+        }
+
+        // STOP spraying before RTL
+        if (autoSpray) {
+            missionItems.add(
+                MissionItemInt(
+                    targetSystem = fcuSystemId,
+                    targetComponent = fcuComponentId,
+                    seq = sequenceNumber.toUShort(),
+                    frame = MavEnumValue.of(MavFrame.MISSION),
+                    command = MavEnumValue.fromValue(MAV_CMD_DO_SPRAYER),  // MAV_CMD_DO_SPRAYER = 216
+                    current = 0u,
+                    autocontinue = 1u,
+                    param1 = 0f,  // 0 = STOP spraying
+                    param2 = 0f,
+                    param3 = 0f,
+                    param4 = 0f,
+                    x = 0,
+                    y = 0,
+                    z = 0f
+                )
+            )
+            sequenceNumber++
         }
 
         // Add RTL (Return to Launch) at the end
@@ -240,14 +320,38 @@ object GridMissionConverter {
 
     /**
      * Calculate total mission items count
+     * @param gridResult Grid survey result
+     * @param holdNosePosition If true, includes YAW command in count
+     * @param autoSpray If true, includes DO_SPRAYER commands in count
      */
-    fun calculateMissionItemCount(gridResult: GridSurveyResult): Int {
+    fun calculateMissionItemCount(
+        gridResult: GridSurveyResult,
+        holdNosePosition: Boolean = false,
+        autoSpray: Boolean = false
+    ): Int {
         var count = 2 // Home + Takeoff
+
+        // Add CONDITION_YAW command if holdNosePosition is enabled
+        if (holdNosePosition) {
+            count += 1
+        }
+
         count += gridResult.waypoints.size // Survey waypoints
 
         // Count speed change commands (one per line)
         val speedCommands = gridResult.waypoints.count { it.isLineStart && it.speed != null }
         count += speedCommands
+
+        // Count sprayer commands if autoSpray is enabled
+        // Each line has a START command, and there's a STOP before RTL
+        // Lines after the first also have a STOP at end of previous line
+        if (autoSpray) {
+            val uniqueLines = gridResult.waypoints.map { it.lineIndex }.distinct().size
+            // START for each line + (STOP for each line except first) + final STOP before RTL
+            // = uniqueLines (START commands) + (uniqueLines - 1) (STOP between lines) + 1 (final STOP)
+            // = 2 * uniqueLines
+            count += 2 * uniqueLines
+        }
 
         count += 1 // RTL
 

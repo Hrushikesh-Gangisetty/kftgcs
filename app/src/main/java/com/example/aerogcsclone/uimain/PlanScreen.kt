@@ -73,6 +73,7 @@ fun PlanScreen(
     var surveySpeed by remember { mutableStateOf(10f) }
     var surveyAltitude by remember { mutableStateOf(60f) }
     var holdNosePosition by remember { mutableStateOf(false) }
+    var autoSpray by remember { mutableStateOf(false) }
 
     // Grid state
     var surveyPolygon by remember { mutableStateOf<List<LatLng>>(emptyList()) }
@@ -496,6 +497,7 @@ fun PlanScreen(
                                     homePosition = homePosition,
                                     holdNosePosition = holdNosePosition,
                                     initialYaw = currentHeading,
+                                    autoSpray = autoSpray,
                                     fcuSystemId = fcuSystemId,
                                     fcuComponentId = fcuComponentId
                                 )
@@ -965,6 +967,29 @@ fun PlanScreen(
                             }
                             Text(
                                 "Nose will hold current position during survey lines",
+                                color = Color.Gray,
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
+                        }
+
+                        // Auto Spray
+                        Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("Auto Spray", color = Color.White, modifier = Modifier.weight(1f))
+                                Switch(
+                                    checked = autoSpray,
+                                    onCheckedChange = { autoSpray = it },
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = Color.White,
+                                        checkedTrackColor = Color.Green, // Green when ON
+                                        uncheckedThumbColor = Color.White,
+                                        uncheckedTrackColor = Color.Red // Red when OFF
+                                    )
+                                )
+                            }
+                            Text(
+                                "Sprayer will turn ON during survey lines",
                                 color = Color.Gray,
                                 style = MaterialTheme.typography.bodySmall,
                                 modifier = Modifier.padding(top = 4.dp)
