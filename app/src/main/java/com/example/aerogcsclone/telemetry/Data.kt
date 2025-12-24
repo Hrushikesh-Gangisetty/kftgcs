@@ -74,11 +74,15 @@ data class TelemetryState(
     val missionElapsedSec: Long? = null,
     val lastMissionElapsedSec: Long? = null,
     val missionCompleted: Boolean = false,
+    val missionCompletedHandled: Boolean = false, // Tracks if the completion popup was already shown
     val totalDistanceMeters: Float? = null,
     // Formatted speed values for UI
     val formattedAirspeed: String? = null,
     val formattedGroundspeed: String? = null,
     val heading: Float? = null,
+    // Attitude data (roll, pitch in degrees)
+    val roll: Float? = null,
+    val pitch: Float? = null,
     // Waypoint tracking for pause/resume
     val currentWaypoint: Int? = null,
     val missionPaused: Boolean = false,

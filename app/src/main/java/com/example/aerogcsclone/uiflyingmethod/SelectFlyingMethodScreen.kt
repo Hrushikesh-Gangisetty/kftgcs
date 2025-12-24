@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -29,6 +30,11 @@ import com.example.aerogcsclone.utils.AppStrings
 
 @Composable
 fun SelectFlyingMethodScreen(navController: NavController, sharedViewModel: SharedViewModel) {
+    // Clear mission data from map when user comes back to select a new flying mode
+    LaunchedEffect(Unit) {
+        sharedViewModel.clearMissionFromMap()
+    }
+
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = Color.Transparent

@@ -99,7 +99,7 @@ class MavlinkTelemetryRepository(
 
     // Rate limiting for state updates to reduce Bluetooth buffer pressure
     private var lastStateUpdateTime = 0L
-    private val MIN_UPDATE_INTERVAL_MS = 100L // 10Hz max update rate
+    private val MIN_UPDATE_INTERVAL_MS = 50L // 20Hz max update rate (increased from 10Hz for smoother UI)
 
     // For total distance tracking
     private val positionHistory = mutableListOf<Pair<Double, Double>>()
@@ -349,8 +349,9 @@ class MavlinkTelemetryRepository(
 
                             setMessageRate(1u, 0.5f)   // SYS_STATUS - reduced from 1Hz for Bluetooth
                             setMessageRate(24u, 0.5f)  // GPS_RAW_INT - reduced from 1Hz for Bluetooth
-                            setMessageRate(33u, 2f)    // GLOBAL_POSITION_INT - reduced from 5Hz for Bluetooth
-                            setMessageRate(74u, 2f)    // VFR_HUD - reduced from 5Hz for Bluetooth
+                            setMessageRate(33u, 5f)    // GLOBAL_POSITION_INT - increased to 5Hz for smoother position updates
+                            setMessageRate(74u, 20f)   // VFR_HUD - 20Hz (50ms) for INSTANT speed updates (pilot critical)
+                            setMessageRate(30u, 20f)   // ATTITUDE - 20Hz (50ms) for smooth yaw updates (critical for nose position)
                             setMessageRate(147u, 0.5f) // BATTERY_STATUS - reduced from 1Hz for Bluetooth
                             setMessageRate(65u, 1f)    // RC_CHANNELS - reduced from 2Hz for Bluetooth
 
@@ -411,7 +412,7 @@ class MavlinkTelemetryRepository(
                 }
         }
 
-        // VFR_HUD
+        // VFR_HUD - CRITICAL: Speed updates must be instant for pilot safety
         scope.launch {
             mavFrame
                 .filter { state.value.fcuDetected && it.systemId == fcuSystemId }
@@ -432,15 +433,46 @@ class MavlinkTelemetryRepository(
                         else -> hud.heading
                     }.toFloat()
 
-                    // Use throttled update for high-frequency VFR_HUD messages
-                    throttledStateUpdate {
-                        copy(
+                    // INSTANT update - NO throttling for speed data (pilot critical)
+                    // Speed must update immediately for pilot safety
+                    _state.update { state ->
+                        state.copy(
                             altitudeMsl = hud.alt,
                             airspeed = hud.airspeed.takeIf { v -> v > 0f },
                             groundspeed = hud.groundspeed.takeIf { v -> v > 0f },
                             formattedAirspeed = formatSpeed(hud.airspeed.takeIf { v -> v > 0f }),
                             formattedGroundspeed = formatSpeed(hud.groundspeed.takeIf { v -> v > 0f }),
                             heading = normalizedHeading
+                        )
+                    }
+                }
+        }
+
+        // ATTITUDE - for high-frequency yaw updates (nose position)
+        // ATTITUDE provides roll, pitch, yaw in radians at higher rate than VFR_HUD
+        scope.launch {
+            mavFrame
+                .filter { state.value.fcuDetected && it.systemId == fcuSystemId }
+                .map { it.message }
+                .filterIsInstance<Attitude>()
+                .collect { att ->
+                    // Convert yaw from radians to degrees (0-360)
+                    // Attitude yaw is in radians, range -PI to PI
+                    val yawDegrees = Math.toDegrees(att.yaw.toDouble()).toFloat()
+                    val normalizedYaw = when {
+                        yawDegrees < 0 -> yawDegrees + 360f
+                        yawDegrees >= 360 -> yawDegrees - 360f
+                        else -> yawDegrees
+                    }
+
+                    // Direct state update without throttling for smooth yaw display
+                    // ATTITUDE is critical for nose position display
+                    _state.update { state ->
+                        state.copy(
+                            heading = normalizedYaw,
+                            // Also store raw attitude values if needed
+                            roll = Math.toDegrees(att.roll.toDouble()).toFloat(),
+                            pitch = Math.toDegrees(att.pitch.toDouble()).toFloat()
                         )
                     }
                 }
@@ -794,35 +826,56 @@ class MavlinkTelemetryRepository(
                             missionTimerJob?.cancel()
                             missionTimerJob = scope.launch {
                                 var elapsed = 0L
-                                _state.update { it.copy(missionElapsedSec = 0L, missionCompleted = false, lastMissionElapsedSec = null) }
+                                _state.update { it.copy(missionElapsedSec = 0L, missionCompleted = false, lastMissionElapsedSec = null, missionCompletedHandled = false) }
                                 while (isActive && state.value.mode?.equals("Auto", ignoreCase = true) == true && state.value.armed) {
                                     delay(1000)
                                     elapsed += 1
                                     _state.update { it.copy(missionElapsedSec = elapsed) }
                                 }
-                                // Mission ended: store last elapsed time
-                                val lastElapsed = state.value.missionElapsedSec
-                                _state.update { it.copy(missionElapsedSec = null, missionCompleted = true, lastMissionElapsedSec = lastElapsed) }
+                                // NOTE: Do NOT set missionCompleted here - let the mode change handler do it
+                                // This coroutine exits when mode changes or drone disarms, and the handler below
+                                // will properly set missionCompleted based on context (paused vs completed)
                             }
-                        } else if ((lastMode?.equals("Auto", ignoreCase = true) == true && mode != "Auto") ||
-                            (lastArmed == true && armed == false && mode.equals("Auto", ignoreCase = true))) {
+                        } else if ((lastMode?.equals("Auto", ignoreCase = true) == true && !mode.equals("Auto", ignoreCase = true))) {
+                            // Mode changed from Auto to something else (Loiter, RTL, etc.)
                             // Check if mission is paused - if so, DON'T mark as completed
                             val isPaused = state.value.missionPaused
 
-                            if (!isPaused) {
-                                // Mission ended (either mode changed from Auto, or drone disarmed in Auto)
-                                // Only mark as completed if NOT paused
-                                missionTimerJob?.cancel()
-                                missionTimerJob = null
+                            // Cancel the timer job
+                            missionTimerJob?.cancel()
+                            missionTimerJob = null
+
+                            // Only mark as completed if NOT paused AND not already marked
+                            if (!isPaused && !state.value.missionCompleted) {
                                 val lastElapsed = state.value.missionElapsedSec
-                                _state.update { it.copy(missionElapsedSec = null, missionCompleted = true, lastMissionElapsedSec = lastElapsed) }
-                                Log.i("TelemetryRepo", "Mission completed - elapsed: ${lastElapsed}s")
+                                // Only set missionCompleted if we had a meaningful mission (elapsed time > 0)
+                                if ((lastElapsed ?: 0L) > 0L) {
+                                    _state.update { it.copy(missionElapsedSec = null, missionCompleted = true, lastMissionElapsedSec = lastElapsed) }
+                                    Log.i("TelemetryRepo", "✅ Mission completed - elapsed: ${lastElapsed}s (mode: $lastMode -> $mode)")
+                                } else {
+                                    // No meaningful mission - just reset state without triggering completion
+                                    _state.update { it.copy(missionElapsedSec = null) }
+                                    Log.i("TelemetryRepo", "Mode changed from Auto to $mode but no mission was running")
+                                }
+                            } else if (isPaused) {
+                                Log.i("TelemetryRepo", "Mission paused - keeping state frozen, NOT marking as completed")
                             } else {
-                                // Mission paused - keep timer frozen but don't mark as completed
-                                missionTimerJob?.cancel()
-                                missionTimerJob = null
-                                Log.i("TelemetryRepo", "Mission paused - keeping timer frozen, NOT marking as completed")
+                                Log.d("TelemetryRepo", "Mission already marked completed, not re-marking")
                             }
+
+                            // ISSUE FIX #2: Disable spray when mode changes from Auto to any other mode
+                            Log.i("TelemetryRepo", "🚿 Mode changed from Auto to $mode - disabling spray")
+                            sharedViewModel.disableSprayOnModeChange()
+
+                            // Disable yaw hold when exiting Auto mode
+                            Log.i("TelemetryRepo", "🧭 Mode changed from Auto to $mode - disabling yaw hold")
+                            sharedViewModel.disableYawHold()
+                        } else if (lastArmed == true && !armed) {
+                            // Drone disarmed - cancel timer and DON'T show mission complete popup for disarm
+                            missionTimerJob?.cancel()
+                            missionTimerJob = null
+                            _state.update { it.copy(missionElapsedSec = null) }
+                            Log.i("TelemetryRepo", "Drone disarmed - timer stopped, no completion popup")
                         }
                         lastMode = mode
                         lastArmed = armed

@@ -30,6 +30,8 @@ import com.google.android.gms.maps.model.LatLng
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
 import com.example.aerogcsclone.grid.GridUtils
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -73,18 +75,12 @@ class SharedViewModel : ViewModel() {
         // Setup emergency RTL callback for crash handler
         setupEmergencyRTLCallback()
 
-        // Observe mission completion to clear waypoints from the map
-        viewModelScope.launch {
-            var previousMissionCompleted = false
-            _telemetryState.collect { state ->
-                // When mission transitions from not completed to completed
-                if (state.missionCompleted && !previousMissionCompleted) {
-                    Log.i("SharedVM", "Mission completed detected - clearing mission waypoints from map")
-                    clearMissionFromMap()
-                }
-                previousMissionCompleted = state.missionCompleted
-            }
-        }
+        // NOTE: Mission waypoints are NO LONGER automatically cleared when mission completes.
+        // The map lines should remain visible until user explicitly navigates back to
+        // select a new flying mode. clearMissionFromMap() should be called when:
+        // 1. User navigates to SelectFlyingMethodScreen
+        // 2. User explicitly clears the mission
+        // 3. User uploads a new mission
     }
 
     /**
@@ -334,11 +330,32 @@ class SharedViewModel : ViewModel() {
             lastMissionElapsedSec = if (completed) elapsedSeconds else _telemetryState.value.lastMissionElapsedSec
         )
 
-        // Reset mission area and clear mission waypoints when mission completes
+        // NOTE: Mission waypoints are NO LONGER automatically cleared when mission completes.
+        // The map lines should remain visible until user navigates to select a new flying mode.
         if (completed) {
-            Log.i("SharedVM", "Mission completed via updateFlightState - clearing mission")
-            clearMissionFromMap()
+            Log.i("SharedVM", "Mission completed via updateFlightState - keeping map lines visible")
         }
+    }
+
+    /**
+     * Mark the mission completed popup as handled to prevent it from showing again
+     * This should be called after the popup is shown or skipped
+     */
+    fun markMissionCompletedHandled() {
+        _telemetryState.value = _telemetryState.value.copy(missionCompletedHandled = true)
+        Log.i("SharedVM", "Mission completed handled - popup won't show again for this mission")
+    }
+
+    /**
+     * Reset mission completed state - called when starting a new mission
+     */
+    fun resetMissionCompletedState() {
+        _telemetryState.value = _telemetryState.value.copy(
+            missionCompleted = false,
+            missionCompletedHandled = false,
+            lastMissionElapsedSec = null
+        )
+        Log.i("SharedVM", "Mission completed state reset")
     }
 
     // --- Calibration helpers ---
@@ -652,6 +669,19 @@ class SharedViewModel : ViewModel() {
 
     private val _sprayRate = MutableStateFlow(100f) // 10% to 100%
     val sprayRate: StateFlow<Float> = _sprayRate.asStateFlow()
+
+    // ========== YAW HOLD STATE (Hold Nose Position feature) ==========
+    // These control continuous yaw enforcement during AUTO mode
+    private val _yawHoldEnabled = MutableStateFlow(false)
+    val yawHoldEnabled: StateFlow<Boolean> = _yawHoldEnabled.asStateFlow()
+
+    private val _lockedYaw = MutableStateFlow<Float?>(null)
+    val lockedYaw: StateFlow<Float?> = _lockedYaw.asStateFlow()
+
+    private var yawEnforcementJob: kotlinx.coroutines.Job? = null
+    private val YAW_TOLERANCE = 5f  // degrees - only send correction if error exceeds this
+    private val YAW_ENFORCEMENT_INTERVAL = 500L  // ms - how often to check/enforce yaw
+    // ================================================================
 
     // --- Notification State ---
     private val _notifications = MutableStateFlow<List<Notification>>(emptyList())
@@ -1128,7 +1158,7 @@ class SharedViewModel : ViewModel() {
 
     fun startMission(onResult: (Boolean, String?) -> Unit = { _, _ -> }) {
         viewModelScope.launch {
-            _telemetryState.value = _telemetryState.value.copy(missionCompleted = false, missionElapsedSec = null)
+            _telemetryState.value = _telemetryState.value.copy(missionCompleted = false, missionCompletedHandled = false, missionElapsedSec = null)
             try {
                 Log.i("SharedVM", "Starting mission start sequence...")
 
@@ -1232,6 +1262,13 @@ class SharedViewModel : ViewModel() {
                 val result = repo?.startMission() ?: false
                 if (result) {
                     Log.i("SharedVM", "✓ Mission start acknowledged by FCU")
+
+                    // Start yaw enforcement if yaw hold is enabled
+                    if (_yawHoldEnabled.value && _lockedYaw.value != null) {
+                        Log.i("SharedVM", "🧭 Starting yaw enforcement for locked yaw: ${_lockedYaw.value}°")
+                        startYawEnforcement()
+                    }
+
                     onResult(true, null)
                 } else {
                     Log.e("SharedVM", "Mission start failed or not acknowledged")
@@ -1629,6 +1666,20 @@ class SharedViewModel : ViewModel() {
         Log.i("SprayControl", "Spray ${if (enabled) "ENABLED" else "DISABLED"} at rate: ${_sprayRate.value}%")
     }
 
+    /**
+     * Disable spray when mode changes from Auto to another mode
+     * This ensures spray is turned off when pilot takes manual control
+     */
+    fun disableSprayOnModeChange() {
+        if (_sprayEnabled.value) {
+            Log.i("SprayControl", "🚿 Auto-disabling spray due to mode change from Auto")
+            _sprayEnabled.value = false
+            controlSpray(false)
+            addNotification(Notification("Spray disabled - Mode changed from Auto", NotificationType.INFO))
+            showSprayStatusPopup("Spray Disabled (Mode Change)")
+        }
+    }
+
     fun setSprayRate(rate: Float) {
         _sprayRate.value = rate.coerceIn(10f, 100f)
         Log.i("SprayControl", "Spray rate set to: ${_sprayRate.value}%")
@@ -1636,6 +1687,122 @@ class SharedViewModel : ViewModel() {
             controlSpray(true)
         }
     }
+
+    // ========== YAW HOLD FUNCTIONS (Hold Nose Position feature) ==========
+
+    /**
+     * Enable yaw hold and capture current yaw as the locked target.
+     * Call this when starting AUTO mission with "Hold Nose Position" enabled.
+     */
+    fun enableYawHold() {
+        val currentYaw = _telemetryState.value.heading
+        if (currentYaw != null) {
+            // Normalize yaw to 0-360
+            val normalizedYaw = if (currentYaw < 0) currentYaw + 360 else currentYaw
+            _lockedYaw.value = normalizedYaw
+            _yawHoldEnabled.value = true
+            Log.i("YawHold", "🧭 Yaw hold ENABLED - locked to ${normalizedYaw}°")
+            addNotification(Notification("Yaw locked at ${normalizedYaw.toInt()}°", NotificationType.INFO))
+        } else {
+            Log.w("YawHold", "⚠️ Cannot enable yaw hold - no heading data available")
+        }
+    }
+
+    /**
+     * Disable yaw hold and stop continuous enforcement.
+     * Call this when exiting AUTO mode or completing mission.
+     */
+    fun disableYawHold() {
+        if (_yawHoldEnabled.value) {
+            _yawHoldEnabled.value = false
+            _lockedYaw.value = null
+            yawEnforcementJob?.cancel()
+            yawEnforcementJob = null
+            Log.i("YawHold", "🧭 Yaw hold DISABLED")
+        }
+    }
+
+    /**
+     * Start continuous yaw enforcement loop.
+     * This should be called when entering AUTO mode with yaw hold enabled.
+     */
+    fun startYawEnforcement() {
+        if (!_yawHoldEnabled.value || _lockedYaw.value == null) {
+            Log.w("YawHold", "Cannot start yaw enforcement - yaw hold not enabled or no locked yaw")
+            return
+        }
+
+        // Cancel any existing enforcement job
+        yawEnforcementJob?.cancel()
+
+        yawEnforcementJob = viewModelScope.launch {
+            Log.i("YawHold", "🔄 Starting continuous yaw enforcement at ${_lockedYaw.value}°")
+
+            while (currentCoroutineContext().isActive && _yawHoldEnabled.value) {
+                val currentMode = _telemetryState.value.mode
+                val targetYaw = _lockedYaw.value ?: break
+
+                // Only enforce yaw in AUTO mode
+                if (currentMode?.equals("Auto", ignoreCase = true) == true) {
+                    val currentYaw = _telemetryState.value.heading ?: continue
+
+                    // Calculate yaw error (handle wrap-around)
+                    var yawError = targetYaw - currentYaw
+                    if (yawError > 180) yawError -= 360
+                    if (yawError < -180) yawError += 360
+
+                    // Only send correction if error exceeds tolerance
+                    if (kotlin.math.abs(yawError) > YAW_TOLERANCE) {
+                        Log.d("YawHold", "📐 Yaw error: ${yawError}° - sending correction to ${targetYaw}°")
+                        sendYawCommand(targetYaw)
+                    }
+                } else {
+                    // Not in AUTO mode - stop enforcement
+                    Log.i("YawHold", "Mode is $currentMode (not AUTO) - stopping yaw enforcement")
+                    break
+                }
+
+                delay(YAW_ENFORCEMENT_INTERVAL)
+            }
+
+            Log.i("YawHold", "🛑 Yaw enforcement loop ended")
+        }
+    }
+
+    /**
+     * Send a yaw command to the drone using MAV_CMD_CONDITION_YAW.
+     * This tells the drone to rotate to the specified absolute yaw angle.
+     */
+    private suspend fun sendYawCommand(targetYaw: Float) {
+        try {
+            repo?.sendCommand(
+                MavCmd.CONDITION_YAW,
+                param1 = targetYaw,  // Target yaw angle (degrees, 0-360)
+                param2 = 30f,        // Yaw speed deg/s
+                param3 = 0f,         // Direction: 0 = shortest path
+                param4 = 0f          // 0 = absolute angle
+            )
+        } catch (e: Exception) {
+            Log.e("YawHold", "Failed to send yaw command: ${e.message}")
+        }
+    }
+
+    /**
+     * Set WP_YAW_BEHAVIOR parameter on the autopilot.
+     * 0 = Never change yaw (what we want for hold nose position)
+     * 1 = Face next waypoint (default)
+     * 2 = Face direction of travel
+     */
+    suspend fun setWpYawBehavior(value: Int) {
+        try {
+            setParameter("WP_YAW_BEHAVIOR", value.toFloat())
+            Log.i("YawHold", "✓ WP_YAW_BEHAVIOR set to $value")
+        } catch (e: Exception) {
+            Log.e("YawHold", "Failed to set WP_YAW_BEHAVIOR: ${e.message}")
+        }
+    }
+
+    // =================================================================
     /**
      * Update flow sensor calibration factor (BATT2_AMP_PERVLT parameter)
      * This will be sent to the autopilot to update the flow sensor calibration

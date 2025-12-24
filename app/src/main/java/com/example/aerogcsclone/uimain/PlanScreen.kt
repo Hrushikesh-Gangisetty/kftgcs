@@ -530,6 +530,18 @@ fun PlanScreen(
                                 telemetryViewModel.uploadMission(builtMission) { success, error ->
                                     if (success) {
                                         Toast.makeText(context, AppStrings.gridMissionUploaded, Toast.LENGTH_SHORT).show()
+
+                                        // If Hold Nose Position is enabled, set up yaw hold
+                                        if (holdNosePosition) {
+                                            coroutineScope.launch {
+                                                // Set WP_YAW_BEHAVIOR = 0 to prevent auto yaw changes
+                                                telemetryViewModel.setWpYawBehavior(0)
+                                                // Enable yaw hold and capture current yaw
+                                                telemetryViewModel.enableYawHold()
+                                                Toast.makeText(context, "Yaw locked at ${currentHeading.toInt()}°", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+
                                         // Publish planning points and grid/survey data to SharedViewModel only after successful upload
                                         val publishedPoints = gridResult?.waypoints?.map { it.position } ?: emptyList()
                                         telemetryViewModel.setPlanningWaypoints(publishedPoints)

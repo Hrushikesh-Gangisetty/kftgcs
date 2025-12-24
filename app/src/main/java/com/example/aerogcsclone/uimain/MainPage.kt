@@ -280,12 +280,21 @@ fun MainPage(
         var lastMissionTime by remember { mutableStateOf<Long?>(null) }
         var lastMissionDistance by remember { mutableStateOf<Float?>(null) }
         var lastLitresConsumed by remember { mutableStateOf<Float?>(null) }
-        var prevMissionCompleted by remember { mutableStateOf(false) }
         var missionJustCompleted by remember { mutableStateOf(false) }
+        // Track the last handled completion time to prevent duplicate popups
+        var lastHandledCompletionTime by remember { mutableStateOf(0L) }
 
-        LaunchedEffect(telemetryState.missionCompleted, telemetryState.lastMissionElapsedSec, telemetryState.totalDistanceMeters, telemetryState.sprayTelemetry.consumedLiters) {
-            // Check if mission just completed
-            if (telemetryState.missionCompleted && !prevMissionCompleted) {
+        // FIXED: Only use missionCompleted as key, and track handled state internally
+        // The issue was that having missionCompletedHandled as a key caused re-triggers
+        LaunchedEffect(telemetryState.missionCompleted, telemetryState.lastMissionElapsedSec) {
+            // Only show popup if:
+            // 1. missionCompleted is true
+            // 2. We haven't already handled this specific completion
+            // 3. Dialog isn't already showing
+            val currentCompletionTime = telemetryState.lastMissionElapsedSec ?: 0L
+            val isNewCompletion = currentCompletionTime != lastHandledCompletionTime && currentCompletionTime > 0L
+
+            if (telemetryState.missionCompleted && !missionJustCompleted && isNewCompletion) {
                 // Capture final values
                 lastMissionTime = telemetryState.lastMissionElapsedSec
                 lastMissionDistance = telemetryState.totalDistanceMeters
@@ -303,12 +312,12 @@ fun MainPage(
                 if (missionTimeValid || distanceValid) {
                     Log.i("MainPage", "✅ Mission data valid - showing completion dialog")
                     missionJustCompleted = true
+                    lastHandledCompletionTime = currentCompletionTime
                 } else {
                     Log.w("MainPage", "⚠️ Mission completed but no meaningful data captured - skipping dialog")
+                    lastHandledCompletionTime = currentCompletionTime
                 }
             }
-
-            prevMissionCompleted = telemetryState.missionCompleted
         }
 
         if (missionJustCompleted) {
