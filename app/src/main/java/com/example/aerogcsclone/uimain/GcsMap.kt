@@ -120,7 +120,14 @@ fun GcsMap(
     onPolygonPointDrag: (index: Int, newPosition: LatLng) -> Unit = { _, _ -> },
     // Polygon point selection
     selectedPolygonPointIndex: Int? = null,
-    onPolygonPointClick: (index: Int) -> Unit = {}
+    onPolygonPointClick: (index: Int) -> Unit = {},
+    // Geofence point drag callback
+    onGeofencePointDrag: (index: Int, newPosition: LatLng) -> Unit = { _, _ -> },
+    // Geofence point selection
+    selectedGeofencePointIndex: Int? = null,
+    onGeofencePointClick: (index: Int) -> Unit = {},
+    // Geofence adjustment mode
+    geofenceAdjustmentEnabled: Boolean = false
 ) {
     val context = LocalContext.current
     val cameraState = cameraPositionState ?: rememberCameraPositionState()
@@ -194,6 +201,40 @@ fun GcsMap(
                     strokeColor = Color.Red,
                     strokeWidth = 4f
                 )
+
+                // Add draggable markers for geofence adjustment when enabled
+                if (geofenceAdjustmentEnabled) {
+                    geofencePolygon.forEachIndexed { index, point ->
+                        val markerState = rememberMarkerState(position = point)
+
+                        // Listen to marker position changes for drag events
+                        LaunchedEffect(markerState.position, point) {
+                            if (markerState.position != point) {
+                                onGeofencePointDrag(index, markerState.position)
+                            }
+                        }
+
+                        // Determine the marker icon based on selection state
+                        val markerIcon = if (selectedGeofencePointIndex == index) {
+                            mediumYellowMarker // Selected geofence point - Yellow
+                        } else {
+                            mediumOrangeMarker // Default - Orange/Red for geofence
+                        }
+
+                        Marker(
+                            state = markerState,
+                            title = "GF${index + 1}",
+                            icon = markerIcon,
+                            anchor = Offset(0.5f, 0.5f),
+                            draggable = true,  // Enable dragging
+                            onClick = {
+                                // Marker clicked, can be dragged now
+                                onGeofencePointClick(index) // Handle geofence point click
+                                true
+                            }
+                        )
+                    }
+                }
             }
         }
 

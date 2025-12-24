@@ -683,6 +683,16 @@ class SharedViewModel : ViewModel() {
         }
     }
 
+    /**
+     * Manually update the geofence polygon (for user adjustments via dragging)
+     */
+    fun updateGeofencePolygonManually(polygon: List<LatLng>) {
+        if (_geofenceEnabled.value && polygon.size >= 3) {
+            _geofencePolygon.value = polygon
+            Log.i("Geofence", "Geofence polygon manually updated with ${polygon.size} vertices")
+        }
+    }
+
     private fun updateGeofencePolygon() {
         if (!_geofenceEnabled.value) {
             _geofencePolygon.value = emptyList()

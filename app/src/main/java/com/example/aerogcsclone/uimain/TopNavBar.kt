@@ -13,7 +13,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -70,21 +69,12 @@ fun TopNavBar(
         Log.i("RCBattery", "🎮 TopNavBar: RC Battery display updated to ${telemetryState.rcBatteryPercent ?: "N/A"}%")
     }
 
-    // Set nav bar gradient colors based on connection status
-    // Top nav bar color palette — use the provided three-color theme (UI-only)
-    val navBarColors = if (telemetryState.connected) {
-        listOf(
-            Color(0xFF0A0E27),
-            Color(0xFF1A1F3A),
-            Color(0xFF0F1419)
-        )
+    // Set nav bar color based on connection status - solid colors
+    // Green when connected, Red when disconnected
+    val navBarColor = if (telemetryState.connected) {
+        Color(0xFF4CAF50) // Green color for connected state
     } else {
-        // Disconnected gradient (requested): #BF280A, #E84223, #8F0E00
-        listOf(
-            Color(0xFFBF280A),
-            Color(0xFFE84223),
-            Color(0xFF8F0E00)
-        )
+        Color(0xFFE53935) // Red color for disconnected state
     }
 
     Box(
@@ -92,11 +82,7 @@ fun TopNavBar(
             .fillMaxWidth()
             // Removed .statusBarsPadding() to allow navbar to be drawn under status bar
             .height(IntrinsicSize.Min)
-            .background(
-                brush = Brush.horizontalGradient(
-                    colors = navBarColors
-                )
-            )
+            .background(color = navBarColor)
             .padding(horizontal = 12.dp),
         contentAlignment = Alignment.CenterStart
     ) {

@@ -93,6 +93,9 @@ fun PlanScreen(
     // Selected polygon point tracking for deletion and dragging
     var selectedPolygonPointIndex by remember { mutableStateOf<Int?>(null) }
 
+    // Selected geofence point tracking for adjustment
+    var selectedGeofencePointIndex by remember { mutableStateOf<Int?>(null) }
+
     // Waypoint list panel state
     var showWaypointList by remember { mutableStateOf(false) }
 
@@ -359,7 +362,36 @@ fun PlanScreen(
                 onPolygonPointClick = { index ->
                     selectedPolygonPointIndex = index
                     selectedWaypointIndex = null // Clear waypoint selection
-                }
+                    selectedGeofencePointIndex = null // Clear geofence selection
+                },
+                // Handle geofence point dragging
+                onGeofencePointDrag = { index, newPosition ->
+                    if (hasStartedPlanning) {
+                        // Update the local geofence polygon
+                        if (index in localGeofencePolygon.indices) {
+                            localGeofencePolygon = localGeofencePolygon.toMutableList().apply {
+                                this[index] = newPosition
+                            }
+                        }
+                    } else {
+                        // Update the shared view model geofence polygon
+                        if (index in geofencePolygon.indices) {
+                            val updatedPolygon = geofencePolygon.toMutableList().apply {
+                                this[index] = newPosition
+                            }
+                            telemetryViewModel.updateGeofencePolygonManually(updatedPolygon)
+                        }
+                    }
+                },
+                // Handle geofence point selection
+                selectedGeofencePointIndex = selectedGeofencePointIndex,
+                onGeofencePointClick = { index ->
+                    selectedGeofencePointIndex = index
+                    selectedWaypointIndex = null // Clear waypoint selection
+                    selectedPolygonPointIndex = null // Clear polygon selection
+                },
+                // Enable geofence adjustment when geofence is enabled
+                geofenceAdjustmentEnabled = geofenceEnabled
             )
 
             // Status indicator
