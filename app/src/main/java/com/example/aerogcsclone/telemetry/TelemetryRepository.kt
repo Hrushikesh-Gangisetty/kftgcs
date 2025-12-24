@@ -418,6 +418,20 @@ class MavlinkTelemetryRepository(
                 .map { it.message }
                 .filterIsInstance<VfrHud>()
                 .collect { hud ->
+                    // Normalize heading to 0-360 range
+                    // VFR_HUD heading is in degrees, but can be out of range or negative
+                    val normalizedHeading = when {
+                        hud.heading < 0 -> {
+                            // Wrap negative values to positive (e.g., -10 becomes 350)
+                            ((hud.heading % 360) + 360) % 360
+                        }
+                        hud.heading >= 360 -> {
+                            // Wrap values >= 360 (e.g., 370 becomes 10)
+                            hud.heading % 360
+                        }
+                        else -> hud.heading
+                    }.toFloat()
+
                     // Use throttled update for high-frequency VFR_HUD messages
                     throttledStateUpdate {
                         copy(
@@ -426,7 +440,7 @@ class MavlinkTelemetryRepository(
                             groundspeed = hud.groundspeed.takeIf { v -> v > 0f },
                             formattedAirspeed = formatSpeed(hud.airspeed.takeIf { v -> v > 0f }),
                             formattedGroundspeed = formatSpeed(hud.groundspeed.takeIf { v -> v > 0f }),
-                            heading = hud.heading.toFloat()
+                            heading = normalizedHeading
                         )
                     }
                 }
@@ -2508,6 +2522,4 @@ class MavlinkTelemetryRepository(
         return resequenced
     }
 }
-
-
 
