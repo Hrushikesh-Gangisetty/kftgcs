@@ -180,20 +180,13 @@ class MavlinkTelemetryRepository(
                         // Don't set connected=true here anymore
                         // Connection will be marked as true only when FCU heartbeat is received
                         Log.d("MavlinkRepo", "Stream Active - waiting for FCU heartbeat")
-                        // Reset intentional disconnect flag when connection becomes active
-                        intentionalDisconnect = false
                     }
                     is StreamState.Inactive -> {
                         Log.d("MavlinkRepo", "Stream Inactive")
                         _state.update { it.copy(connected = false, fcuDetected = false) }
                         lastFcuHeartbeatTime.set(0L)
-                        // Only reconnect if disconnection was NOT intentional
-                        if (!intentionalDisconnect) {
-                            Log.d("MavlinkRepo", "Accidental disconnect detected, reconnecting...")
-                            reconnect(this)
-                        } else {
-                            Log.d("MavlinkRepo", "Intentional disconnect - not reconnecting")
-                        }
+                        // Auto-reconnect disabled - user must manually reconnect via connection tab
+                        Log.d("MavlinkRepo", "Connection lost - user must manually reconnect via connection tab")
                     }
                 }
             }
@@ -2515,4 +2508,6 @@ class MavlinkTelemetryRepository(
         return resequenced
     }
 }
+
+
 
