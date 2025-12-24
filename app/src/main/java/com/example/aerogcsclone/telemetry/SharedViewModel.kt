@@ -68,6 +68,36 @@ class SharedViewModel : ViewModel() {
     init {
         // Setup emergency RTL callback for crash handler
         setupEmergencyRTLCallback()
+
+        // Observe mission completion to clear waypoints from the map
+        viewModelScope.launch {
+            var previousMissionCompleted = false
+            _telemetryState.collect { state ->
+                // When mission transitions from not completed to completed
+                if (state.missionCompleted && !previousMissionCompleted) {
+                    Log.i("SharedVM", "Mission completed detected - clearing mission waypoints from map")
+                    clearMissionFromMap()
+                }
+                previousMissionCompleted = state.missionCompleted
+            }
+        }
+    }
+
+    /**
+     * Clear all mission-related waypoints and polygons from the map.
+     * Called when mission is completed.
+     */
+    fun clearMissionFromMap() {
+        Log.i("SharedVM", "Clearing mission data from map")
+        _uploadedWaypoints.value = emptyList()
+        _gridWaypoints.value = emptyList()
+        _surveyPolygon.value = emptyList()
+        _gridLines.value = emptyList()
+        _planningWaypoints.value = emptyList()
+        _missionAreaSqMeters.value = 0.0
+        _missionAreaFormatted.value = "0 acres"
+        _missionUploaded.value = false
+        lastUploadedCount = 0
     }
 
     // Initialize TTS with context
@@ -302,13 +332,10 @@ class SharedViewModel : ViewModel() {
             lastMissionElapsedSec = if (completed) elapsedSeconds else _telemetryState.value.lastMissionElapsedSec
         )
 
-        // Reset mission area when mission completes
+        // Reset mission area and clear mission waypoints when mission completes
         if (completed) {
-            Log.i("SharedVM", "Mission completed - resetting mission area")
-            _missionAreaSqMeters.value = 0.0
-            _missionAreaFormatted.value = "0 acres"
-            _missionUploaded.value = false
-            lastUploadedCount = 0
+            Log.i("SharedVM", "Mission completed via updateFlightState - clearing mission")
+            clearMissionFromMap()
         }
     }
 
