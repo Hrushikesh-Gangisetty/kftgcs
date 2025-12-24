@@ -65,6 +65,10 @@ class SharedViewModel : ViewModel() {
     // TextToSpeech manager for voice announcements
     private var ttsManager: TextToSpeechManager? = null
 
+    // Telemetry state - must be declared before init block that uses it
+    private val _telemetryState = MutableStateFlow(TelemetryState())
+    val telemetryState: StateFlow<TelemetryState> = _telemetryState.asStateFlow()
+
     init {
         // Setup emergency RTL callback for crash handler
         setupEmergencyRTLCallback()
@@ -277,8 +281,6 @@ class SharedViewModel : ViewModel() {
     val repository: MavlinkTelemetryRepository?
         get() = repo
 
-    private val _telemetryState = MutableStateFlow(TelemetryState())
-    val telemetryState: StateFlow<TelemetryState> = _telemetryState.asStateFlow()
 
     val isConnected: StateFlow<Boolean> = telemetryState
         .map { it.connected }

@@ -16,6 +16,8 @@ import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.BitmapDescriptor
 import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.maps.android.compose.*
+import com.google.maps.android.SphericalUtil
+import java.util.Locale
 
 // Helper function to create medium-sized marker icons for waypoints
 private fun createMediumMarker(hue: Float): BitmapDescriptor {
@@ -95,6 +97,53 @@ private fun createMarkerWithText(text: String, backgroundColor: Int): BitmapDesc
     return BitmapDescriptorFactory.fromBitmap(bitmap)
 }
 
+// Helper function to create small rounded label for area/dimension display
+private fun createSmallLabelMarker(text: String, backgroundColor: Int = android.graphics.Color.WHITE): BitmapDescriptor {
+    val paint = android.graphics.Paint().apply {
+        isAntiAlias = true
+        textSize = 28f
+        typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+    }
+
+    // Measure text width
+    val textBounds = android.graphics.Rect()
+    paint.getTextBounds(text, 0, text.length, textBounds)
+
+    val paddingH = 16
+    val paddingV = 10
+    val width = textBounds.width() + paddingH * 2
+    val height = textBounds.height() + paddingV * 2
+
+    val bitmap = Bitmap.createBitmap(width.coerceAtLeast(40), height.coerceAtLeast(30), Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+
+    // Draw rounded rectangle background
+    val bgPaint = android.graphics.Paint().apply {
+        isAntiAlias = true
+        color = backgroundColor
+        style = android.graphics.Paint.Style.FILL
+    }
+    val rect = android.graphics.RectF(0f, 0f, bitmap.width.toFloat(), bitmap.height.toFloat())
+    canvas.drawRoundRect(rect, 8f, 8f, bgPaint)
+
+    // Draw border
+    val borderPaint = android.graphics.Paint().apply {
+        isAntiAlias = true
+        color = android.graphics.Color.DKGRAY
+        style = android.graphics.Paint.Style.STROKE
+        strokeWidth = 2f
+    }
+    canvas.drawRoundRect(rect, 8f, 8f, borderPaint)
+
+    // Draw text
+    paint.color = android.graphics.Color.BLACK
+    paint.textAlign = android.graphics.Paint.Align.CENTER
+    val textY = bitmap.height / 2f + textBounds.height() / 2f - textBounds.bottom
+    canvas.drawText(text, bitmap.width / 2f, textY, paint)
+
+    return BitmapDescriptorFactory.fromBitmap(bitmap)
+}
+
 @Composable
 fun GcsMap(
     telemetryState: TelemetryState,
@@ -127,7 +176,9 @@ fun GcsMap(
     selectedGeofencePointIndex: Int? = null,
     onGeofencePointClick: (index: Int) -> Unit = {},
     // Geofence adjustment mode
-    geofenceAdjustmentEnabled: Boolean = false
+    geofenceAdjustmentEnabled: Boolean = false,
+    // Show grid info (area at center, dimensions on edges)
+    showGridInfo: Boolean = false
 ) {
     val context = LocalContext.current
     val cameraState = cameraPositionState ?: rememberCameraPositionState()
@@ -331,6 +382,63 @@ fun GcsMap(
                 // Close the polygon by connecting last point to first
                 val closedPolygon = surveyPolygon + surveyPolygon.first()
                 Polyline(points = closedPolygon, width = 3f, color = Color.Magenta)
+
+                // Show area and dimensions when enabled
+                if (showGridInfo) {
+                    // Calculate area in acres
+                    val areaInSqMeters = SphericalUtil.computeArea(surveyPolygon)
+                    val areaInSqFeet = areaInSqMeters * 10.7639
+                    val areaInAcres = areaInSqFeet / 43560.0
+                    val areaText = String.format(Locale.US, "%.2f acres", areaInAcres)
+
+                    // Calculate centroid of the polygon for area label
+                    val centroidLat = surveyPolygon.map { it.latitude }.average()
+                    val centroidLon = surveyPolygon.map { it.longitude }.average()
+                    val centroid = LatLng(centroidLat, centroidLon)
+
+                    // Create area label marker
+                    val areaLabelIcon = remember(areaText) {
+                        createSmallLabelMarker(areaText)
+                    }
+
+                    Marker(
+                        state = MarkerState(position = centroid),
+                        title = "Area: $areaText",
+                        icon = areaLabelIcon,
+                        anchor = Offset(0.5f, 0.5f)
+                    )
+
+                    // Display edge dimensions for each side of the polygon
+                    surveyPolygon.forEachIndexed { index, point ->
+                        val nextIndex = (index + 1) % surveyPolygon.size
+                        val nextPoint = surveyPolygon[nextIndex]
+
+                        // Calculate distance between consecutive points
+                        val distanceMeters = SphericalUtil.computeDistanceBetween(point, nextPoint)
+                        val distanceText = if (distanceMeters >= 1000) {
+                            String.format(Locale.US, "%.1f km", distanceMeters / 1000)
+                        } else {
+                            String.format(Locale.US, "%.0f m", distanceMeters)
+                        }
+
+                        // Position the label at the midpoint of the edge
+                        val midLat = (point.latitude + nextPoint.latitude) / 2
+                        val midLon = (point.longitude + nextPoint.longitude) / 2
+                        val midPoint = LatLng(midLat, midLon)
+
+                        // Create dimension label marker
+                        val dimLabelIcon = remember(distanceText, index) {
+                            createSmallLabelMarker(distanceText)
+                        }
+
+                        Marker(
+                            state = MarkerState(position = midPoint),
+                            title = "Edge ${index + 1}: $distanceText",
+                            icon = dimLabelIcon,
+                            anchor = Offset(0.5f, 0.5f)
+                        )
+                    }
+                }
             } else if (surveyPolygon.size == 2) {
                 Polyline(points = surveyPolygon, width = 3f, color = Color.Magenta)
             }

@@ -392,7 +392,9 @@ fun PlanScreen(
                     selectedPolygonPointIndex = null // Clear polygon selection
                 },
                 // Enable geofence adjustment when geofence is enabled
-                geofenceAdjustmentEnabled = geofenceEnabled
+                geofenceAdjustmentEnabled = geofenceEnabled,
+                // Show area and dimensions for grid survey mode
+                showGridInfo = isGridSurveyMode && surveyPolygon.size >= 3
             )
 
             // Status indicator
