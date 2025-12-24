@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -390,12 +391,34 @@ fun PlanScreen(
                     selectedGeofencePointIndex = index
                     selectedWaypointIndex = null // Clear waypoint selection
                     selectedPolygonPointIndex = null // Clear polygon selection
+                    Toast.makeText(context, "Geofence point ${index + 1} selected - drag to adjust", Toast.LENGTH_SHORT).show()
                 },
                 // Enable geofence adjustment when geofence is enabled
                 geofenceAdjustmentEnabled = geofenceEnabled,
                 // Show area and dimensions for grid survey mode
                 showGridInfo = isGridSurveyMode && surveyPolygon.size >= 3
             )
+
+            // Geofence adjustment helper text
+            if (geofenceEnabled && (if (hasStartedPlanning) localGeofencePolygon else geofencePolygon).isNotEmpty()) {
+                Card(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.9f)
+                    ),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                ) {
+                    Text(
+                        text = "💡 ${AppStrings.geofence}: Tap orange markers to select, then drag to adjust boundary",
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
 
             // Status indicator
             Column(

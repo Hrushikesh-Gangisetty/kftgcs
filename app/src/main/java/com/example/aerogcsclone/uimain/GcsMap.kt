@@ -256,8 +256,12 @@ fun GcsMap(
                 // Add draggable markers for geofence adjustment when enabled
                 if (geofenceAdjustmentEnabled) {
                     geofencePolygon.forEachIndexed { index, point ->
-                        key(index) { // Use key to ensure proper recomposition per marker
-                            val markerState = rememberMarkerState(position = point)
+                        key("geofence_$index") { // Unique key per geofence point
+                            // Use point coordinates as key to update marker only when polygon actually changes
+                            val markerState = rememberMarkerState(
+                                key = "gf_${point.latitude}_${point.longitude}",
+                                position = point
+                            )
 
                             // Listen to marker position changes for drag events
                             LaunchedEffect(markerState.position) {
@@ -305,8 +309,12 @@ fun GcsMap(
         // Regular waypoint markers and planned route (blue)
         if (points.isNotEmpty() && surveyPolygon.isEmpty()) {
             points.forEachIndexed { index, point ->
-                key(index) { // Use key to ensure proper recomposition per marker
-                    val markerState = rememberMarkerState(position = point)
+                key("waypoint_$index") { // Unique key per waypoint
+                    // Use point coordinates as key to update marker only when waypoint actually changes
+                    val markerState = rememberMarkerState(
+                        key = "wp_${point.latitude}_${point.longitude}",
+                        position = point
+                    )
 
                     // Listen to marker position changes for drag events
                     LaunchedEffect(markerState.position) {
@@ -346,8 +354,12 @@ fun GcsMap(
         // Survey polygon outline (purple) - Now draggable!
         if (surveyPolygon.isNotEmpty()) {
             surveyPolygon.forEachIndexed { index, point ->
-                key(index) { // Use key to ensure proper recomposition per marker
-                    val markerState = rememberMarkerState(position = point)
+                key("polygon_$index") { // Unique key per polygon point
+                    // Use point coordinates as key to update marker only when polygon actually changes
+                    val markerState = rememberMarkerState(
+                        key = "poly_${point.latitude}_${point.longitude}",
+                        position = point
+                    )
 
                     // Listen to marker position changes for drag events
                     LaunchedEffect(markerState.position) {

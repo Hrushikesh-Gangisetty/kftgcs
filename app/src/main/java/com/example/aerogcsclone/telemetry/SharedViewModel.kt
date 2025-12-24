@@ -746,14 +746,8 @@ class SharedViewModel : ViewModel() {
             Log.d("Geofence", "Added home position to geofence: $homePos")
         }
         
-        // Always include current drone position
-        val droneLatitude = _telemetryState.value.latitude
-        val droneLongitude = _telemetryState.value.longitude
-        if (droneLatitude != null && droneLongitude != null) {
-            val dronePos = LatLng(droneLatitude, droneLongitude)
-            allWaypoints.add(dronePos)
-            Log.d("Geofence", "Added current drone position to geofence: $dronePos")
-        }
+        // DO NOT include current drone position - geofence should remain stationary
+        // The drone should move within the fence, not the fence move with the drone
 
         // Add mission waypoints
         if (_uploadedWaypoints.value.isNotEmpty()) {
@@ -1988,8 +1982,7 @@ class SharedViewModel : ViewModel() {
         viewModelScope.launch {
             telemetryState.collect { state ->
                 checkGeofenceViolation(state)
-                // Update geofence polygon when drone position changes (for default square geofence)
-                updateGeofencePolygon()
+                // Do NOT update geofence polygon on every position change - it should stay stationary
             }
         }
 
