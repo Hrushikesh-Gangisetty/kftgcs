@@ -738,6 +738,9 @@ class SharedViewModel : ViewModel() {
     fun setGeofenceEnabled(enabled: Boolean) {
         _geofenceEnabled.value = enabled
         if (enabled) {
+            // Reset geofence state for fresh monitoring
+            resetGeofenceState()
+
             // Capture current drone position as home position if not set
             val droneLat = _telemetryState.value.latitude
             val droneLon = _telemetryState.value.longitude
@@ -746,8 +749,17 @@ class SharedViewModel : ViewModel() {
                 Log.i("Geofence", "Home position captured: $droneLat, $droneLon")
             }
             updateGeofencePolygon()
+
+            Log.i("Geofence", "✓ Geofence ENABLED - monitoring active")
+            addNotification(
+                Notification(
+                    message = "Geofence enabled - monitoring active",
+                    type = NotificationType.INFO
+                )
+            )
         } else {
             _geofencePolygon.value = emptyList()
+            Log.i("Geofence", "Geofence DISABLED")
         }
     }
 
@@ -1636,34 +1648,79 @@ class SharedViewModel : ViewModel() {
         Log.i("LevelSensorCal", "Calibration updated successfully")
     }
 
+    // Spray control configuration
+    // Set to true to use RC_CHANNELS_OVERRIDE, false to use DO_SET_SERVO
+    // RC_CHANNELS_OVERRIDE is better for real-time control but requires RC passthrough to be enabled
+    // DO_SET_SERVO directly sets servo output, works on most setups
+    private val USE_RC_OVERRIDE_FOR_SPRAY = false
+    private val SPRAY_SERVO_NUMBER = 7 // SERVO7 output (can be changed based on hardware setup)
+    private val SPRAY_RC_CHANNEL = 7 // RC channel 7 (if using RC override)
+
     /**
-     * Control spray system by setting RC7 channel override
-     * @param enable true to enable spray (RC7 = 2000 PWM), false to disable (RC7 = 1000 PWM)
+     * Control spray system by setting servo PWM output.
+     * Uses either DO_SET_SERVO or RC_CHANNELS_OVERRIDE based on configuration.
+     *
+     * PWM mapping:
+     * - OFF: 1000 PWM
+     * - 10% rate: 1100 PWM
+     * - 50% rate: 1500 PWM
+     * - 100% rate: 2000 PWM
+     *
+     * @param enable true to enable spray at current rate, false to disable (PWM = 1000)
      */
     fun controlSpray(enable: Boolean) {
         viewModelScope.launch {
             val pwmValue = if (enable) {
-                // Map spray rate (10-100%) to PWM range (1000-2000)
-                val rate = _sprayRate.value
-                1000 + ((rate / 100f) * 1000f).toInt()
+                // Map spray rate (10-100%) to PWM range (1100-2000)
+                // Formula: PWM = 1000 + (rate/100 * 1000)
+                // At 10%: 1000 + (10/100 * 1000) = 1100
+                // At 100%: 1000 + (100/100 * 1000) = 2000
+                val rate = _sprayRate.value.coerceIn(10f, 100f)
+                val pwm = (1000 + (rate / 100f * 1000f)).toInt()
+                pwm.coerceIn(1100, 2000)
             } else {
-                1000
+                1000 // OFF
             }
-            Log.i("SprayControl", "Setting spray system to ${if (enable) "ENABLED" else "DISABLED"} (RC7 = $pwmValue PWM, Rate: ${_sprayRate.value}%)")
 
-            // Use MAV_CMD_DO_SET_SERVO to control RC7 (servo output 7)
-            repo?.sendCommand(
-                MavCmd.DO_SET_SERVO,
-                param1 = 7f,  // Servo number (RC7)
-                param2 = pwmValue.toFloat()  // PWM value
-            )
+            Log.i("SprayControl", "═══════════════════════════════════════")
+            Log.i("SprayControl", "🚿 SPRAY COMMAND")
+            Log.i("SprayControl", "   State: ${if (enable) "ON" else "OFF"}")
+            Log.i("SprayControl", "   Rate: ${_sprayRate.value.toInt()}%")
+            Log.i("SprayControl", "   PWM: $pwmValue")
+            Log.i("SprayControl", "   Method: ${if (USE_RC_OVERRIDE_FOR_SPRAY) "RC_CHANNELS_OVERRIDE (ch$SPRAY_RC_CHANNEL)" else "DO_SET_SERVO (servo $SPRAY_SERVO_NUMBER)"}")
+            Log.i("SprayControl", "═══════════════════════════════════════")
+
+            repo?.let { repository ->
+                try {
+                    if (USE_RC_OVERRIDE_FOR_SPRAY) {
+                        // Use RC_CHANNELS_OVERRIDE for real-time control
+                        repository.sendRcChannelOverride(SPRAY_RC_CHANNEL, pwmValue.toUShort())
+                    } else {
+                        // Use DO_SET_SERVO for direct servo control
+                        repository.sendServoCommand(SPRAY_SERVO_NUMBER, pwmValue)
+                    }
+                    Log.i("SprayControl", "✓ Command sent successfully")
+                } catch (e: Exception) {
+                    Log.e("SprayControl", "✗ Failed to send spray command: ${e.message}", e)
+                }
+            } ?: run {
+                Log.e("SprayControl", "✗ Cannot control spray - not connected to drone")
+            }
         }
     }
 
     fun setSprayEnabled(enabled: Boolean) {
         _sprayEnabled.value = enabled
         controlSpray(enabled)
-        Log.i("SprayControl", "Spray ${if (enabled) "ENABLED" else "DISABLED"} at rate: ${_sprayRate.value}%")
+        Log.i("SprayControl", "Spray ${if (enabled) "ENABLED" else "DISABLED"} at rate: ${_sprayRate.value.toInt()}%")
+
+        // Show notification
+        addNotification(
+            Notification(
+                message = if (enabled) "Spray enabled at ${_sprayRate.value.toInt()}%" else "Spray disabled",
+                type = if (enabled) NotificationType.SUCCESS else NotificationType.INFO
+            )
+        )
     }
 
     /**
@@ -1680,11 +1737,24 @@ class SharedViewModel : ViewModel() {
         }
     }
 
+    // Debounce job for spray rate changes
+    private var sprayRateDebounceJob: kotlinx.coroutines.Job? = null
+    private val SPRAY_RATE_DEBOUNCE_MS = 150L // 150ms debounce for smoother slider interaction
+
     fun setSprayRate(rate: Float) {
-        _sprayRate.value = rate.coerceIn(10f, 100f)
-        Log.i("SprayControl", "Spray rate set to: ${_sprayRate.value}%")
-        if (_sprayEnabled.value) {
-            controlSpray(true)
+        val newRate = rate.coerceIn(10f, 100f)
+        _sprayRate.value = newRate
+
+        // Debounce the actual command send to avoid flooding FC when slider moves rapidly
+        sprayRateDebounceJob?.cancel()
+        sprayRateDebounceJob = viewModelScope.launch {
+            delay(SPRAY_RATE_DEBOUNCE_MS)
+            if (_sprayEnabled.value) {
+                Log.i("SprayControl", "🚿 Rate changed to ${newRate.toInt()}% - updating PWM")
+                controlSpray(true) // Re-send with new rate
+            } else {
+                Log.d("SprayControl", "Rate set to ${newRate.toInt()}% (spray disabled, command will be sent when enabled)")
+            }
         }
     }
 
@@ -2142,7 +2212,14 @@ class SharedViewModel : ViewModel() {
     val geofenceViolationDetected: StateFlow<Boolean> = _geofenceViolationDetected.asStateFlow()
 
     private var lastGeofenceCheck = 0L
-    private val geofenceCheckInterval = 1000L // Check every 1 second
+    private val geofenceCheckInterval = 200L // Check every 200ms for faster response
+
+    // Track if RTL has been triggered for current breach to avoid spamming commands
+    private var rtlTriggeredForCurrentBreach = false
+
+    // Cooldown to prevent RTL spam (wait 5 seconds between RTL triggers)
+    private var lastRtlTriggerTime = 0L
+    private val RTL_COOLDOWN_MS = 5000L
 
     init {
         // Monitor drone position and check geofence violations
@@ -2167,72 +2244,155 @@ class SharedViewModel : ViewModel() {
         if (currentTime - lastGeofenceCheck < geofenceCheckInterval) return
         lastGeofenceCheck = currentTime
 
-        if (!_geofenceEnabled.value || _geofencePolygon.value.isEmpty()) return
+        // Skip if geofence not enabled or no polygon defined
+        if (!_geofenceEnabled.value) {
+            return
+        }
+
+        val polygon = _geofencePolygon.value
+        if (polygon.isEmpty() || polygon.size < 3) {
+            Log.d("Geofence", "No valid geofence polygon (${polygon.size} points)")
+            return
+        }
 
         val droneLat = state.latitude
         val droneLon = state.longitude
 
-        if (droneLat == null || droneLon == null) return
+        if (droneLat == null || droneLon == null) {
+            Log.d("Geofence", "No drone position available")
+            return
+        }
 
         val dronePosition = LatLng(droneLat, droneLon)
-        val isInsideGeofence = isPointInPolygon(dronePosition, _geofencePolygon.value)
+        val isInsideGeofence = isPointInPolygon(dronePosition, polygon)
 
-        if (!isInsideGeofence && !_geofenceViolationDetected.value) {
-            // Geofence violation detected!
+        // Log position check periodically (every 2 seconds)
+        if (currentTime % 2000 < 300) {
+            Log.d("Geofence", "Position check: lat=$droneLat, lon=$droneLon, inside=$isInsideGeofence")
+        }
+
+        if (!isInsideGeofence) {
+            // DRONE IS OUTSIDE GEOFENCE!
             _geofenceViolationDetected.value = true
-            Log.w("Geofence", "GEOFENCE VIOLATION DETECTED! Switching to RTL mode")
 
-            // Add notification
-            addNotification(
-                Notification(
-                    message = "GEOFENCE VIOLATION: Drone crossed boundary! Switching to RTL mode",
-                    type = NotificationType.WARNING
+            // Check cooldown to prevent RTL spam
+            val timeSinceLastRtl = currentTime - lastRtlTriggerTime
+
+            if (!rtlTriggeredForCurrentBreach && timeSinceLastRtl > RTL_COOLDOWN_MS) {
+                // Trigger RTL
+                rtlTriggeredForCurrentBreach = true
+                lastRtlTriggerTime = currentTime
+
+                Log.w("Geofence", "🚨🚨🚨 GEOFENCE BREACH DETECTED! 🚨🚨🚨")
+                Log.w("Geofence", "Drone position: $droneLat, $droneLon")
+                Log.w("Geofence", "Triggering RTL NOW!")
+
+                addNotification(
+                    Notification(
+                        message = "🚨 GEOFENCE BREACH! RTL ACTIVATED!",
+                        type = NotificationType.WARNING
+                    )
                 )
-            )
 
-            // Automatically switch to RTL mode
-            switchToRTL()
-        } else if (isInsideGeofence && _geofenceViolationDetected.value) {
-            // Drone returned to safe zone
-            _geofenceViolationDetected.value = false
-            Log.i("Geofence", "Drone returned to safe zone")
+                // Trigger RTL immediately
+                triggerGeofenceRTL()
+            } else if (rtlTriggeredForCurrentBreach) {
+                Log.d("Geofence", "Still outside fence, RTL already triggered")
+            } else {
+                Log.d("Geofence", "RTL cooldown active (${(RTL_COOLDOWN_MS - timeSinceLastRtl) / 1000}s remaining)")
+            }
 
-            addNotification(
-                Notification(
-                    message = "GEOFENCE CLEAR: Drone returned to safe zone",
-                    type = NotificationType.INFO
+        } else {
+            // Drone is inside geofence
+            if (_geofenceViolationDetected.value) {
+                // Was outside, now back inside - clear violation
+                _geofenceViolationDetected.value = false
+                rtlTriggeredForCurrentBreach = false
+
+                Log.i("Geofence", "✓ Drone returned to safe zone")
+                addNotification(
+                    Notification(
+                        message = "✓ GEOFENCE CLEAR: Drone back inside boundary",
+                        type = NotificationType.INFO
+                    )
                 )
-            )
+            }
         }
     }
 
-    private fun switchToRTL() {
+    /**
+     * Trigger RTL for geofence violation.
+     * Sends RTL command directly without BRAKE mode (BRAKE may not be available on all setups).
+     */
+    private fun triggerGeofenceRTL() {
         viewModelScope.launch {
             repo?.let { repository ->
                 try {
-                    Log.i("Geofence", "Sending RTL command to drone")
-                    repository.changeMode(MavMode.RTL)
+                    Log.i("Geofence", "═══════════════════════════════════════")
+                    Log.i("Geofence", "🏠 SENDING RTL COMMAND FOR GEOFENCE BREACH")
+                    Log.i("Geofence", "═══════════════════════════════════════")
 
-                    addNotification(
-                        Notification(
-                            message = "RTL ACTIVATED: Return to Launch mode activated due to geofence violation",
-                            type = NotificationType.WARNING
+                    // Send RTL command
+                    val success = repository.changeMode(MavMode.RTL)
+
+                    if (success) {
+                        Log.i("Geofence", "✓ RTL command acknowledged by drone")
+                        addNotification(
+                            Notification(
+                                message = "🏠 RTL ACTIVATED: Returning to launch point",
+                                type = NotificationType.WARNING
+                            )
                         )
-                    )
-                } catch (e: Exception) {
-                    Log.e("Geofence", "Failed to switch to RTL mode: ${e.message}")
+                    } else {
+                        Log.e("Geofence", "✗ RTL command not acknowledged - retrying...")
+                        // Retry once
+                        delay(500)
+                        val retrySuccess = repository.changeMode(MavMode.RTL)
+                        if (retrySuccess) {
+                            Log.i("Geofence", "✓ RTL retry successful")
+                        } else {
+                            Log.e("Geofence", "✗ RTL retry also failed")
+                            addNotification(
+                                Notification(
+                                    message = "⚠️ RTL command may not have been received!",
+                                    type = NotificationType.ERROR
+                                )
+                            )
+                        }
+                    }
 
+                    // TTS announcement
+                    ttsManager?.speak("Geofence breach. Returning to home.")
+
+                } catch (e: Exception) {
+                    Log.e("Geofence", "❌ Failed to send RTL command: ${e.message}", e)
                     addNotification(
                         Notification(
-                            message = "RTL FAILED: Failed to activate RTL mode - ${e.message}",
+                            message = "❌ RTL FAILED: ${e.message}",
                             type = NotificationType.ERROR
                         )
                     )
                 }
             } ?: run {
-                Log.e("Geofence", "Cannot switch to RTL - no connection to drone")
+                Log.e("Geofence", "❌ Cannot send RTL - not connected to drone!")
+                addNotification(
+                    Notification(
+                        message = "❌ NO CONNECTION: Cannot send RTL!",
+                        type = NotificationType.ERROR
+                    )
+                )
             }
         }
+    }
+
+    /**
+     * Reset geofence state - call this when starting a new mission or re-enabling geofence
+     */
+    fun resetGeofenceState() {
+        _geofenceViolationDetected.value = false
+        rtlTriggeredForCurrentBreach = false
+        lastRtlTriggerTime = 0L
+        Log.i("Geofence", "Geofence state reset")
     }
 
     override fun onCleared() {

@@ -234,4 +234,80 @@ object GeofenceUtils {
         return (a.latitude - o.latitude) * (b.longitude - o.longitude) -
                (a.longitude - o.longitude) * (b.latitude - o.latitude)
     }
+
+    /**
+     * Calculate the Haversine distance between two points in meters
+     */
+    fun haversineDistance(p1: LatLng, p2: LatLng): Double {
+        val earthRadius = 6371000.0 // meters
+        val lat1Rad = p1.latitude * PI / 180
+        val lat2Rad = p2.latitude * PI / 180
+        val deltaLat = (p2.latitude - p1.latitude) * PI / 180
+        val deltaLon = (p2.longitude - p1.longitude) * PI / 180
+
+        val a = sin(deltaLat / 2) * sin(deltaLat / 2) +
+                cos(lat1Rad) * cos(lat2Rad) *
+                sin(deltaLon / 2) * sin(deltaLon / 2)
+        val c = 2 * atan2(sqrt(a), sqrt(1 - a))
+
+        return earthRadius * c
+    }
+
+    /**
+     * Calculate the minimum distance from a point to the nearest edge of a polygon (in meters)
+     * Returns the distance to the closest polygon edge
+     */
+    fun distanceToPolygonEdge(point: LatLng, polygon: List<LatLng>): Double {
+        if (polygon.size < 2) return Double.MAX_VALUE
+
+        var minDistance = Double.MAX_VALUE
+        val n = polygon.size
+
+        for (i in 0 until n) {
+            val p1 = polygon[i]
+            val p2 = polygon[(i + 1) % n]
+
+            val distance = distanceToLineSegment(point, p1, p2)
+            if (distance < minDistance) {
+                minDistance = distance
+            }
+        }
+
+        return minDistance
+    }
+
+    /**
+     * Calculate distance from a point to a line segment in meters
+     */
+    private fun distanceToLineSegment(point: LatLng, lineStart: LatLng, lineEnd: LatLng): Double {
+        val lineLengthSq = distanceSquared(lineStart, lineEnd)
+
+        // If line segment is actually a point
+        if (lineLengthSq < 1e-10) {
+            return haversineDistance(point, lineStart)
+        }
+
+        // Calculate projection of point onto the line
+        val t = maxOf(0.0, minOf(1.0,
+            ((point.latitude - lineStart.latitude) * (lineEnd.latitude - lineStart.latitude) +
+             (point.longitude - lineStart.longitude) * (lineEnd.longitude - lineStart.longitude)) / lineLengthSq
+        ))
+
+        // Find the closest point on the line segment
+        val closestPoint = LatLng(
+            lineStart.latitude + t * (lineEnd.latitude - lineStart.latitude),
+            lineStart.longitude + t * (lineEnd.longitude - lineStart.longitude)
+        )
+
+        return haversineDistance(point, closestPoint)
+    }
+
+    /**
+     * Calculate squared distance between two points (for internal calculations)
+     */
+    private fun distanceSquared(p1: LatLng, p2: LatLng): Double {
+        val dLat = p2.latitude - p1.latitude
+        val dLon = p2.longitude - p1.longitude
+        return dLat * dLat + dLon * dLon
+    }
 }

@@ -469,17 +469,51 @@ fun TopNavBar(
 
                         Divider(color = Color.White.copy(alpha = 0.3f))
 
+                        // Spray Rate Slider - Always visible
+                        Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(AppStrings.sprayRate, color = Color.White, modifier = Modifier.weight(1f))
+                                Text("${sprayRate.toInt()} %", color = Color.White, fontWeight = FontWeight.Bold)
+                            }
+                            Slider(
+                                value = sprayRate,
+                                onValueChange = { telemetryViewModel.setSprayRate(it) },
+                                valueRange = 10f..100f, // 10% to 100% (minimum 10%)
+                                steps = 89, // 90 steps for 10-100 range
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = SliderDefaults.colors(
+                                    thumbColor = if (sprayEnabled) Color.Green else Color.Gray,
+                                    activeTrackColor = if (sprayEnabled) Color.Green else Color.Gray,
+                                    inactiveTrackColor = Color.DarkGray
+                                )
+                            )
+                            Text(
+                                AppStrings.adjustSprayIntensity,
+                                color = Color.Gray,
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.padding(top = 2.dp)
+                            )
+                        }
+
+                        Divider(color = Color.White.copy(alpha = 0.3f))
+
                         // Spray Enable/Disable Toggle
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                AppStrings.enableSpray,
-                                color = Color.White,
-                                modifier = Modifier.weight(1f),
-                                fontWeight = FontWeight.Bold
-                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    AppStrings.enableSpray,
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    if (sprayEnabled) AppStrings.sprayActive else AppStrings.sprayInactive,
+                                    color = if (sprayEnabled) Color.Green else Color.Red,
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
                             Switch(
                                 checked = sprayEnabled,
                                 onCheckedChange = { telemetryViewModel.setSprayEnabled(it) },
@@ -490,51 +524,6 @@ fun TopNavBar(
                                     uncheckedTrackColor = Color.Red // Red when OFF
                                 )
                             )
-                        }
-
-                        // Status text based on spray state
-                        if (sprayEnabled) {
-                            Text(
-                                AppStrings.sprayActive,
-                                color = Color.Green,
-                                style = MaterialTheme.typography.bodySmall,
-                                modifier = Modifier.padding(top = 4.dp)
-                            )
-                        } else {
-                            Text(
-                                AppStrings.sprayInactive,
-                                color = Color.Red,
-                                style = MaterialTheme.typography.bodySmall,
-                                modifier = Modifier.padding(top = 4.dp)
-                            )
-                        }
-
-                        // Spray Rate Slider (only shown when spray is enabled)
-                        if (sprayEnabled) {
-                            Column(modifier = Modifier.padding(vertical = 4.dp)) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(AppStrings.sprayRate, color = Color.White, modifier = Modifier.weight(1f))
-                                    Text("${sprayRate.toInt()} %", color = Color.White, fontWeight = FontWeight.Bold)
-                                }
-                                Slider(
-                                    value = sprayRate,
-                                    onValueChange = { telemetryViewModel.setSprayRate(it) },
-                                    valueRange = 0f..100f, // 0% to 100%
-                                    steps = 100, // 101 steps for 0-100 range
-                                    modifier = Modifier.fillMaxWidth(),
-                                    colors = SliderDefaults.colors(
-                                        thumbColor = Color.Green,
-                                        activeTrackColor = Color.Green,
-                                        inactiveTrackColor = Color.Gray
-                                    )
-                                )
-                                Text(
-                                    AppStrings.adjustSprayIntensity,
-                                    color = Color.Gray,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    modifier = Modifier.padding(top = 2.dp)
-                                )
-                            }
                         }
                     }
                 }

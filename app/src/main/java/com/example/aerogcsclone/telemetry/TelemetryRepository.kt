@@ -36,6 +36,7 @@ object MavMode {
     const val GUIDED: UInt = 4u // GUIDED mode for copter takeoff
     const val RTL: UInt = 6u // RTL (Return to Launch) mode
     const val LAND: UInt = 9u // Add LAND mode for explicit landing
+    const val BRAKE: UInt = 17u // BRAKE mode - immediately stops all horizontal movement
     // Add other modes as needed
 }
 
@@ -1470,6 +1471,73 @@ class MavlinkTelemetryRepository(
     }
 
     /**
+     * Send RC_CHANNELS_OVERRIDE message to control specific RC channels.
+     * This is used for real-time PWM control of spray systems and other RC-controlled peripherals.
+     *
+     * @param channel The RC channel number (1-18)
+     * @param pwmValue The PWM value (typically 1000-2000, use 0 or UINT16_MAX to release channel)
+     */
+    suspend fun sendRcChannelOverride(channel: Int, pwmValue: UShort) {
+        // RC_CHANNELS_OVERRIDE has 18 channels, use UINT16_MAX (65535) to not override a channel
+        val noOverride: UShort = 65535u
+
+        val rcOverride = RcChannelsOverride(
+            targetSystem = fcuSystemId,
+            targetComponent = fcuComponentId,
+            chan1Raw = if (channel == 1) pwmValue else noOverride,
+            chan2Raw = if (channel == 2) pwmValue else noOverride,
+            chan3Raw = if (channel == 3) pwmValue else noOverride,
+            chan4Raw = if (channel == 4) pwmValue else noOverride,
+            chan5Raw = if (channel == 5) pwmValue else noOverride,
+            chan6Raw = if (channel == 6) pwmValue else noOverride,
+            chan7Raw = if (channel == 7) pwmValue else noOverride,
+            chan8Raw = if (channel == 8) pwmValue else noOverride,
+            chan9Raw = if (channel == 9) pwmValue else noOverride,
+            chan10Raw = if (channel == 10) pwmValue else noOverride,
+            chan11Raw = if (channel == 11) pwmValue else noOverride,
+            chan12Raw = if (channel == 12) pwmValue else noOverride,
+            chan13Raw = if (channel == 13) pwmValue else noOverride,
+            chan14Raw = if (channel == 14) pwmValue else noOverride,
+            chan15Raw = if (channel == 15) pwmValue else noOverride,
+            chan16Raw = if (channel == 16) pwmValue else noOverride,
+            chan17Raw = if (channel == 17) pwmValue else noOverride,
+            chan18Raw = if (channel == 18) pwmValue else noOverride
+        )
+
+        try {
+            connection.trySendUnsignedV2(
+                gcsSystemId,
+                gcsComponentId,
+                rcOverride
+            )
+            Log.d("MavlinkRepo", "Sent RC_CHANNELS_OVERRIDE: ch$channel = $pwmValue PWM")
+        } catch (e: Exception) {
+            Log.e("MavlinkRepo", "Failed to send RC_CHANNELS_OVERRIDE", e)
+        }
+    }
+
+    /**
+     * Send DO_SET_SERVO command - controls servo/motor output directly.
+     * Note: This sets servo output, not RC input. The servo number corresponds to
+     * SERVO outputs (SERVO1_FUNCTION, SERVO2_FUNCTION, etc.), not RC channels.
+     *
+     * For ArduPilot:
+     * - Servo 1-8 typically map to MAIN outputs
+     * - Servo 9+ map to AUX outputs
+     *
+     * @param servoNumber Servo output number (1-based)
+     * @param pwmValue PWM value (typically 1000-2000)
+     */
+    suspend fun sendServoCommand(servoNumber: Int, pwmValue: Int) {
+        sendCommand(
+            MavCmd.DO_SET_SERVO,
+            param1 = servoNumber.toFloat(),
+            param2 = pwmValue.toFloat()
+        )
+        Log.i("MavlinkRepo", "Sent DO_SET_SERVO: servo=$servoNumber PWM=$pwmValue")
+    }
+
+    /**
      * Send pre-arm checks command to validate vehicle is ready to arm
      * Returns true if pre-arm checks pass, false otherwise
      */
@@ -1585,6 +1653,7 @@ class MavlinkTelemetryRepository(
             5u -> "Loiter"
             6u -> "RTL"
             9u -> "Land"
+            17u -> "Brake"
             else -> "Unknown"
         }
         while (System.currentTimeMillis() - start < timeoutMs) {
