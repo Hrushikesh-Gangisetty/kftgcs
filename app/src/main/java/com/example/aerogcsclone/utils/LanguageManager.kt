@@ -192,6 +192,9 @@ object AppStrings {
     // NEW: Plan Screen
     val addPoint get() = getString("Add Point", "పాయింట్ జోడించు")
     val saveMission get() = getString("Save Mission", "మిషన్ సేవ్ చేయండి")
+    val editPlan get() = getString("Edit Plan", "ప్లాన్ సవరించు")
+    val planUnlocked get() = getString("Plan unlocked for editing", "ప్లాన్ సవరణ కోసం అన్‌లాక్ చేయబడింది")
+    val planSavedEditRequired get() = getString("Plan is saved. Click 'Edit Plan' to make changes.", "ప్లాన్ సేవ్ చేయబడింది. మార్పులు చేయడానికి 'ప్లాన్ సవరించు' క్లిక్ చేయండి.")
     val uploadMissionBtn get() = getString("Upload Mission", "మిషన్ అప్‌లోడ్ చేయండి")
     val templateLoaded get() = getString("Template loaded successfully", "టెంప్లేట్ విజయవంతంగా లోడ్ చేయబడింది")
     val selectPolygonPoint get() = getString("Please select a polygon point to delete", "తొలగించడానికి దయచేసి పాలిగాన్ పాయింట్‌ను ఎంచుకోండి")
