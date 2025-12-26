@@ -30,9 +30,16 @@ class GridGenerator {
             )
         }
 
+        // Apply indentation (shrink polygon inward for safe zone)
+        val effectivePolygon = if (params.indentation > 0) {
+            GridUtils.shrinkPolygon(polygon, params.indentation)
+        } else {
+            polygon
+        }
+
         // Calculate polygon center and bounding box
-        val center = GridUtils.calculatePolygonCenter(polygon)
-        val (southwest, northeast) = GridUtils.calculateBoundingBox(polygon)
+        val center = GridUtils.calculatePolygonCenter(effectivePolygon)
+        val (southwest, northeast) = GridUtils.calculateBoundingBox(effectivePolygon)
 
         // Calculate grid dimensions
         val width = GridUtils.haversineDistance(
@@ -84,8 +91,8 @@ class GridGenerator {
                 perpOffsetY + lineOffsetY
             )
 
-            // Trim line to polygon intersection
-            val trimmedLine = trimLineToPolygon(lineStart, lineEnd, polygon)
+            // Trim line to polygon intersection (use effectivePolygon with indentation applied)
+            val trimmedLine = trimLineToPolygon(lineStart, lineEnd, effectivePolygon)
 
             if (trimmedLine != null) {
                 val (start, end) = trimmedLine

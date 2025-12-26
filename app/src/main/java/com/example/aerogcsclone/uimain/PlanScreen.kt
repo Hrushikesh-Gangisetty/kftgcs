@@ -75,6 +75,7 @@ fun PlanScreen(
     var surveyAltitude by remember { mutableStateOf(60f) }
     var holdNosePosition by remember { mutableStateOf(false) }
     var autoSpray by remember { mutableStateOf(false) }
+    var indentation by remember { mutableStateOf(1f) }  // Safe zone padding in meters (1-10m, 0.5 step)
 
     // Grid state
     var surveyPolygon by remember { mutableStateOf<List<LatLng>>(emptyList()) }
@@ -141,7 +142,8 @@ fun PlanScreen(
                 gridAngle = gridAngle,
                 speed = surveySpeed,
                 altitude = surveyAltitude,
-                includeSpeedCommands = true
+                includeSpeedCommands = true,
+                indentation = indentation
             )
             gridResult = gridGenerator.generateGridSurvey(surveyPolygon, params)
 
@@ -234,7 +236,7 @@ fun PlanScreen(
     }
 
     // Update grid when parameters change
-    LaunchedEffect(lineSpacing, gridAngle, surveySpeed, surveyAltitude, surveyPolygon) {
+    LaunchedEffect(lineSpacing, gridAngle, surveySpeed, surveyAltitude, indentation, surveyPolygon) {
         if (isGridSurveyMode) {
             regenerateGrid()
         }
@@ -985,6 +987,56 @@ fun PlanScreen(
                                     )
                                 }
                             }
+                        }
+
+                        // Indentation (Safe Zone Padding)
+                        Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("Indentation", color = Color.White, modifier = Modifier.weight(1f))
+                                Text("${String.format(Locale.US, "%.1f", indentation)} m", color = Color.White, fontWeight = FontWeight.Bold)
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(
+                                    onClick = { indentation = (indentation - 0.5f).coerceAtLeast(1f) },
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Remove,
+                                        contentDescription = "Decrease",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                                Slider(
+                                    value = indentation,
+                                    onValueChange = { indentation = it },
+                                    valueRange = 1f..10f,
+                                    steps = 17,  // (10-1)/0.5 - 1 = 17 steps for 0.5m increments
+                                    modifier = Modifier.weight(1f),
+                                    colors = SliderDefaults.colors(
+                                        thumbColor = MaterialTheme.colorScheme.primary,
+                                        activeTrackColor = MaterialTheme.colorScheme.primary,
+                                        inactiveTrackColor = Color.Gray
+                                    )
+                                )
+                                IconButton(
+                                    onClick = { indentation = (indentation + 0.5f).coerceAtMost(10f) },
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Add,
+                                        contentDescription = "Increase",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                            Text(
+                                "Safe zone padding from polygon boundary",
+                                color = Color.Gray,
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.padding(top = 2.dp)
+                            )
                         }
 
                         // Hold Nose Position

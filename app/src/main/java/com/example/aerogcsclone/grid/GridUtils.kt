@@ -176,4 +176,52 @@ object GridUtils {
         val areaInAcres = areaInSqFeet / ft2PerAcre
         return String.format(Locale.US, "%.2f acres", areaInAcres)
     }
+
+    /**
+     * Shrink a polygon inward by a specified distance (indentation/padding)
+     * This creates a safe zone by moving all edges inward
+     * @param polygon Original polygon vertices
+     * @param distance Distance to shrink inward in meters
+     * @return Shrunk polygon, or original if shrinking fails
+     */
+    fun shrinkPolygon(polygon: List<LatLng>, distance: Float): List<LatLng> {
+        if (polygon.size < 3 || distance <= 0) return polygon
+
+        val center = calculatePolygonCenter(polygon)
+        val shrunkPolygon = mutableListOf<LatLng>()
+
+        for (point in polygon) {
+            // Calculate direction from point to center
+            val bearing = calculateBearing(point, center)
+
+            // Move point toward center by the specified distance
+            val newPoint = movePointByBearing(point, bearing, distance.toDouble())
+            shrunkPolygon.add(newPoint)
+        }
+
+        // Validate the shrunk polygon is still valid (has positive area)
+        val originalArea = calculatePolygonArea(polygon)
+        val shrunkArea = calculatePolygonArea(shrunkPolygon)
+
+        // If shrunk polygon is too small or inverted, return a smaller shrinkage
+        return if (shrunkArea > 0 && shrunkArea < originalArea) {
+            shrunkPolygon
+        } else {
+            polygon // Return original if shrinking would invert polygon
+        }
+    }
+
+    /**
+     * Move a point by a given bearing and distance
+     * @param point Starting point
+     * @param bearing Direction in degrees (0 = North, 90 = East)
+     * @param distance Distance in meters
+     * @return New point
+     */
+    fun movePointByBearing(point: LatLng, bearing: Double, distance: Double): LatLng {
+        val bearingRad = Math.toRadians(bearing)
+        val dx = distance * sin(bearingRad)
+        val dy = distance * cos(bearingRad)
+        return moveLatLng(point, dx, dy)
+    }
 }
