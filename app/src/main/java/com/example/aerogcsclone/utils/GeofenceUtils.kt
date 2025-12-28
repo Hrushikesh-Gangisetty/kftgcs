@@ -237,6 +237,7 @@ object GeofenceUtils {
 
     /**
      * Calculate the Haversine distance between two points in meters
+     * This is the most accurate distance calculation for geographic coordinates
      */
     fun haversineDistance(p1: LatLng, p2: LatLng): Double {
         val earthRadius = 6371000.0 // meters
@@ -254,8 +255,38 @@ object GeofenceUtils {
     }
 
     /**
+     * Calculate bearing from point p1 to point p2 in degrees (0-360)
+     * Matches Mission Planner's GetBearing function
+     */
+    private fun getBearing(p1: LatLng, p2: LatLng): Double {
+        val lat1Rad = p1.latitude * PI / 180
+        val lat2Rad = p2.latitude * PI / 180
+        val deltaLon = (p2.longitude - p1.longitude) * PI / 180
+
+        val y = sin(deltaLon) * cos(lat2Rad)
+        val x = cos(lat1Rad) * sin(lat2Rad) - sin(lat1Rad) * cos(lat2Rad) * cos(deltaLon)
+
+        var bearing = atan2(y, x) * 180 / PI
+        if (bearing < 0) bearing += 360
+        return bearing
+    }
+
+    /**
      * Calculate the minimum distance from a point to the nearest edge of a polygon (in meters)
-     * Returns the distance to the closest polygon edge
+     * Uses Mission Planner's cross-track distance formula for accurate perpendicular distance calculation.
+     *
+     * Algorithm based on Mission Planner:
+     * 1. For each fence segment (line from point A to point B):
+     *    - Calculate the distance from lineStart to lineEnd (lineDist)
+     *    - Calculate the distance from lineStart to drone location (distToLocation)
+     *    - Calculate the bearing from lineStart to drone (bearToLocation)
+     *    - Calculate the bearing from lineStart to lineEnd (lineBear)
+     *    - Calculate the angle difference
+     *    - Calculate alongLine = cos(angle) * distToLocation (projection along line)
+     *    - If alongLine is within the segment bounds:
+     *      - Cross-track distance = sin(angle) * distToLocation
+     * 2. Also check distance to each vertex (corner distance check)
+     * 3. Return the minimum of all distances
      */
     fun distanceToPolygonEdge(point: LatLng, polygon: List<LatLng>): Double {
         if (polygon.size < 2) return Double.MAX_VALUE
@@ -263,13 +294,44 @@ object GeofenceUtils {
         var minDistance = Double.MAX_VALUE
         val n = polygon.size
 
+        // Step 1: Cross-Track Distance Calculation for each fence segment
+        // This calculates the perpendicular distance from the drone to each segment
         for (i in 0 until n) {
-            val p1 = polygon[i]
-            val p2 = polygon[(i + 1) % n]
+            val lineStart = polygon[i]
+            val lineEnd = polygon[(i + 1) % n]
 
-            val distance = distanceToLineSegment(point, p1, p2)
-            if (distance < minDistance) {
-                minDistance = distance
+            // Calculate distances and bearings (Mission Planner style)
+            val lineDist = haversineDistance(lineStart, lineEnd)
+            val distToLocation = haversineDistance(lineStart, point)
+            val bearToLocation = getBearing(lineStart, point)
+            val lineBear = getBearing(lineStart, lineEnd)
+
+            // Calculate angle difference (normalize to 0-360)
+            var angle = bearToLocation - lineBear
+            if (angle < 0) angle += 360
+
+            // Convert angle to radians for trig functions
+            val angleRad = angle * PI / 180
+
+            // Calculate projection along the line
+            val alongLine = cos(angleRad) * distToLocation
+
+            // Check if perpendicular projection falls within the line segment
+            if (alongLine >= 0 && alongLine <= lineDist) {
+                // Cross-track distance calculation
+                val crossTrackDist = abs(sin(angleRad) * distToLocation)
+                if (crossTrackDist < minDistance) {
+                    minDistance = crossTrackDist
+                }
+            }
+        }
+
+        // Step 2: Corner Distance Check - check distance to each vertex
+        // This is important for corners where the perpendicular doesn't hit any segment
+        for (i in 0 until n) {
+            val vertexDist = haversineDistance(point, polygon[i])
+            if (vertexDist < minDistance) {
+                minDistance = vertexDist
             }
         }
 
@@ -277,37 +339,52 @@ object GeofenceUtils {
     }
 
     /**
-     * Calculate distance from a point to a line segment in meters
+     * Check if a point is inside a polygon using ray casting algorithm
+     * This is equivalent to Mission Planner's PolygonTools.isInside function
      */
-    private fun distanceToLineSegment(point: LatLng, lineStart: LatLng, lineEnd: LatLng): Double {
-        val lineLengthSq = distanceSquared(lineStart, lineEnd)
+    fun isPointInPolygon(point: LatLng, polygon: List<LatLng>): Boolean {
+        if (polygon.size < 3) return false
 
-        // If line segment is actually a point
-        if (lineLengthSq < 1e-10) {
-            return haversineDistance(point, lineStart)
+        var inside = false
+        var j = polygon.size - 1
+
+        for (i in polygon.indices) {
+            val xi = polygon[i].longitude
+            val yi = polygon[i].latitude
+            val xj = polygon[j].longitude
+            val yj = polygon[j].latitude
+
+            if (((yi > point.latitude) != (yj > point.latitude)) &&
+                (point.longitude < (xj - xi) * (point.latitude - yi) / (yj - yi) + xi)) {
+                inside = !inside
+            }
+            j = i
         }
 
-        // Calculate projection of point onto the line
-        val t = maxOf(0.0, minOf(1.0,
-            ((point.latitude - lineStart.latitude) * (lineEnd.latitude - lineStart.latitude) +
-             (point.longitude - lineStart.longitude) * (lineEnd.longitude - lineStart.longitude)) / lineLengthSq
-        ))
-
-        // Find the closest point on the line segment
-        val closestPoint = LatLng(
-            lineStart.latitude + t * (lineEnd.latitude - lineStart.latitude),
-            lineStart.longitude + t * (lineEnd.longitude - lineStart.longitude)
-        )
-
-        return haversineDistance(point, closestPoint)
+        return inside
     }
 
     /**
-     * Calculate squared distance between two points (for internal calculations)
+     * Complete geofence check that matches Mission Planner's behavior:
+     * - Returns 0 if breach (outside inclusion polygon or inside exclusion polygon)
+     * - Returns the distance to the nearest fence edge if inside
+     *
+     * For an INCLUSION polygon (which is what we use):
+     * - If drone is OUTSIDE the polygon = BREACH (return 0)
+     * - If drone is INSIDE, return the distance to the nearest edge
      */
-    private fun distanceSquared(p1: LatLng, p2: LatLng): Double {
-        val dLat = p2.latitude - p1.latitude
-        val dLon = p2.longitude - p1.longitude
-        return dLat * dLat + dLon * dLon
+    fun checkGeofenceDistance(point: LatLng, polygon: List<LatLng>): Double {
+        if (polygon.size < 3) return Double.MAX_VALUE
+
+        // Check if inside the inclusion polygon
+        val isInside = isPointInPolygon(point, polygon)
+
+        // If outside an INCLUSION polygon = BREACH
+        if (!isInside) {
+            return 0.0
+        }
+
+        // If inside, return the distance to the nearest edge
+        return distanceToPolygonEdge(point, polygon)
     }
 }
