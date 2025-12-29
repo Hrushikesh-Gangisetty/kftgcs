@@ -19,18 +19,18 @@ import com.google.maps.android.compose.*
 import com.google.maps.android.SphericalUtil
 import java.util.Locale
 
-// Helper function to create medium-sized marker icons for waypoints
+// Helper function to create larger marker icons for waypoints - easier to interact with
 private fun createMediumMarker(hue: Float): BitmapDescriptor {
-    // Create a medium-sized bitmap (50% of original marker size)
-    val scale = 0.5f
-    val width = (64 * scale).toInt() // Default marker is ~64px
-    val height = (64 * scale).toInt()
+    // Create a larger bitmap for better touch targets (increased from 32px to 56px)
+    val size = 56
+    val width = size
+    val height = size
 
-    // Create a medium-sized colored circle as marker
-    val mediumBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-    val canvas = Canvas(mediumBitmap)
+    // Create a larger colored circle as marker for easier interaction
+    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
 
-    // Draw a medium-sized colored circle
+    // Draw a colored circle with improved visibility
     val paint = android.graphics.Paint().apply {
         isAntiAlias = true
         color = when (hue) {
@@ -39,25 +39,31 @@ private fun createMediumMarker(hue: Float): BitmapDescriptor {
             BitmapDescriptorFactory.HUE_GREEN -> android.graphics.Color.GREEN
             BitmapDescriptorFactory.HUE_RED -> android.graphics.Color.RED
             BitmapDescriptorFactory.HUE_ORANGE -> android.graphics.Color.rgb(255, 165, 0)
+            BitmapDescriptorFactory.HUE_YELLOW -> android.graphics.Color.YELLOW
             else -> android.graphics.Color.BLUE
         }
         style = android.graphics.Paint.Style.FILL
     }
 
+    canvas.drawCircle(width / 2f, height / 2f, width / 2f - 3, paint)
+
+    // Add a thicker white border for better visibility
+    paint.style = android.graphics.Paint.Style.STROKE
+    paint.strokeWidth = 4f
+    paint.color = android.graphics.Color.WHITE
+    canvas.drawCircle(width / 2f, height / 2f, width / 2f - 3, paint)
+
+    // Add a thin dark outline for contrast on light backgrounds
+    paint.strokeWidth = 1.5f
+    paint.color = android.graphics.Color.DKGRAY
     canvas.drawCircle(width / 2f, height / 2f, width / 2f - 1, paint)
 
-    // Add a border for visibility
-    paint.style = android.graphics.Paint.Style.STROKE
-    paint.strokeWidth = 2f
-    paint.color = android.graphics.Color.WHITE
-    canvas.drawCircle(width / 2f, height / 2f, width / 2f - 2, paint)
-
-    return BitmapDescriptorFactory.fromBitmap(mediumBitmap)
+    return BitmapDescriptorFactory.fromBitmap(bitmap)
 }
 
-// Helper function to create markers with text labels
+// Helper function to create larger markers with text labels for better interaction
 private fun createMarkerWithText(text: String, backgroundColor: Int): BitmapDescriptor {
-    val size = 80 // Larger size to accommodate text
+    val size = 100 // Larger size for better touch targets and visibility
     val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bitmap)
 
@@ -67,25 +73,37 @@ private fun createMarkerWithText(text: String, backgroundColor: Int): BitmapDesc
         color = backgroundColor
         style = android.graphics.Paint.Style.FILL
     }
-    canvas.drawCircle(size / 2f, size / 2f, size / 2f - 4, circlePaint)
+    canvas.drawCircle(size / 2f, size / 2f, size / 2f - 5, circlePaint)
 
-    // Draw white border
+    // Draw thicker white border for visibility
     val borderPaint = android.graphics.Paint().apply {
         isAntiAlias = true
         color = android.graphics.Color.WHITE
         style = android.graphics.Paint.Style.STROKE
-        strokeWidth = 4f
+        strokeWidth = 5f
     }
-    canvas.drawCircle(size / 2f, size / 2f, size / 2f - 4, borderPaint)
+    canvas.drawCircle(size / 2f, size / 2f, size / 2f - 5, borderPaint)
 
-    // Draw the text
+    // Draw dark outline for contrast
+    val outlinePaint = android.graphics.Paint().apply {
+        isAntiAlias = true
+        color = android.graphics.Color.DKGRAY
+        style = android.graphics.Paint.Style.STROKE
+        strokeWidth = 1.5f
+    }
+    canvas.drawCircle(size / 2f, size / 2f, size / 2f - 1, outlinePaint)
+
+    // Draw the text - larger and bolder
     val textPaint = android.graphics.Paint().apply {
         isAntiAlias = true
         color = android.graphics.Color.WHITE
-        textSize = 48f
+        textSize = 56f
         typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
         textAlign = android.graphics.Paint.Align.CENTER
     }
+
+    // Add text shadow for better readability
+    textPaint.setShadowLayer(2f, 1f, 1f, android.graphics.Color.BLACK)
 
     // Center the text vertically
     val textBounds = android.graphics.Rect()
@@ -489,7 +507,7 @@ fun GcsMap(
             }
             if (points.size > 1) {
                 key(points) {
-                    Polyline(points = points, width = 4f, color = Color.Blue)
+                    Polyline(points = points, width = 8f, color = Color.Blue) // Thicker for better visibility
                 }
             }
         }
@@ -536,7 +554,7 @@ fun GcsMap(
             if (surveyPolygon.size > 2) {
                 // Close the polygon by connecting last point to first
                 val closedPolygon = surveyPolygon + surveyPolygon.first()
-                Polyline(points = closedPolygon, width = 3f, color = Color.Magenta)
+                Polyline(points = closedPolygon, width = 6f, color = Color.Magenta) // Thicker for better visibility
 
                 // Show area and dimensions when enabled
                 if (showGridInfo) {
@@ -595,7 +613,7 @@ fun GcsMap(
                     }
                 }
             } else if (surveyPolygon.size == 2) {
-                Polyline(points = surveyPolygon, width = 3f, color = Color.Magenta)
+                Polyline(points = surveyPolygon, width = 6f, color = Color.Magenta) // Thicker for better visibility
             }
         }
 
@@ -604,7 +622,7 @@ fun GcsMap(
             if (line.size >= 2) {
                 Polyline(
                     points = line,
-                    width = 2f,
+                    width = 4f, // Thicker for better visibility
                     color = if (splitPlanMode) Color.Gray.copy(alpha = 0.5f) else Color.Green
                 )
             }
