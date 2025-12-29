@@ -162,6 +162,60 @@ private fun createSmallLabelMarker(text: String, backgroundColor: Int = android.
     return BitmapDescriptorFactory.fromBitmap(bitmap)
 }
 
+// Helper function to create drone icon with directional arrow indicating nose heading
+private fun createDroneIconWithArrow(context: android.content.Context): BitmapDescriptor? {
+    return runCatching {
+        // Load the original drone image
+        val droneBmp = BitmapFactory.decodeResource(context.resources, R.drawable.d_image_prev_ui)
+        val sizeDp = 64f
+        val sizePx = (sizeDp * context.resources.displayMetrics.density).toInt().coerceAtLeast(24)
+
+        // Create a mutable bitmap to draw on
+        val resultBitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(resultBitmap)
+
+        // Scale and draw the drone image centered
+        val scaledDrone = Bitmap.createScaledBitmap(droneBmp, sizePx, sizePx, true)
+        canvas.drawBitmap(scaledDrone, 0f, 0f, null)
+
+        // Draw an arrow pointing upward (north/0°) to indicate the nose direction
+        val arrowPaint = android.graphics.Paint().apply {
+            isAntiAlias = true
+            color = android.graphics.Color.RED
+            style = android.graphics.Paint.Style.FILL_AND_STROKE
+            strokeWidth = 3f
+        }
+
+        // Calculate arrow dimensions relative to icon size
+        val centerX = sizePx / 2f
+        val arrowHeight = sizePx * 0.35f
+        val arrowWidth = sizePx * 0.15f
+
+        // Define arrow path pointing upward (triangular arrow at the top)
+        val arrowPath = android.graphics.Path().apply {
+            // Arrow tip at top center
+            moveTo(centerX, sizePx * 0.05f)
+            // Arrow left side
+            lineTo(centerX - arrowWidth / 2, sizePx * 0.05f + arrowHeight)
+            // Arrow right side
+            lineTo(centerX + arrowWidth / 2, sizePx * 0.05f + arrowHeight)
+            // Close the path
+            close()
+        }
+
+        // Draw the arrow
+        canvas.drawPath(arrowPath, arrowPaint)
+
+        // Add white border to arrow for better visibility
+        arrowPaint.style = android.graphics.Paint.Style.STROKE
+        arrowPaint.color = android.graphics.Color.WHITE
+        arrowPaint.strokeWidth = 2f
+        canvas.drawPath(arrowPath, arrowPaint)
+
+        BitmapDescriptorFactory.fromBitmap(resultBitmap)
+    }.getOrNull()
+}
+
 @Composable
 fun GcsMap(
     telemetryState: TelemetryState,
@@ -217,15 +271,9 @@ fun GcsMap(
 
     val visitedPositions = remember { mutableStateListOf<LatLng>() }
 
-    // Load quadcopter drawable from res/drawable and scale to dp-based size
+    // Load quadcopter drawable with directional arrow indicator
     val droneIcon = remember {
-        runCatching {
-            val bmp = BitmapFactory.decodeResource(context.resources, R.drawable.d_image_prev_ui)
-            val sizeDp = 64f
-            val sizePx = (sizeDp * context.resources.displayMetrics.density).toInt().coerceAtLeast(24)
-            val scaled = Bitmap.createScaledBitmap(bmp, sizePx, sizePx, true)
-            BitmapDescriptorFactory.fromBitmap(scaled)
-        }.getOrNull()
+        createDroneIconWithArrow(context)
     }
 
     // Create medium-sized marker icons for waypoints (50% of default size)
