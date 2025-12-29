@@ -178,27 +178,27 @@ private fun createDroneIconWithArrow(context: android.content.Context): BitmapDe
         val scaledDrone = Bitmap.createScaledBitmap(droneBmp, sizePx, sizePx, true)
         canvas.drawBitmap(scaledDrone, 0f, 0f, null)
 
-        // Draw an arrow pointing upward (north/0°) to indicate the nose direction
+        // Draw a smaller arrow pointing upward (north/0°) to indicate the nose direction
         val arrowPaint = android.graphics.Paint().apply {
             isAntiAlias = true
-            color = android.graphics.Color.RED
+            color = android.graphics.Color.WHITE
             style = android.graphics.Paint.Style.FILL_AND_STROKE
-            strokeWidth = 3f
+            strokeWidth = 1f
         }
 
-        // Calculate arrow dimensions relative to icon size
+        // Calculate smaller arrow dimensions - reduced size and better centered
         val centerX = sizePx / 2f
-        val arrowHeight = sizePx * 0.35f
-        val arrowWidth = sizePx * 0.15f
+        val arrowHeight = sizePx * 0.18f  // Reduced from 0.35f to 0.18f
+        val arrowWidth = sizePx * 0.08f   // Reduced from 0.15f to 0.08f
 
-        // Define arrow path pointing upward (triangular arrow at the top)
+        // Define arrow path pointing upward (triangular arrow centered on drone)
         val arrowPath = android.graphics.Path().apply {
-            // Arrow tip at top center
-            moveTo(centerX, sizePx * 0.05f)
+            // Arrow tip positioned closer to center for better centering
+            moveTo(centerX, sizePx * 0.25f)  // Changed from 0.05f to 0.25f
             // Arrow left side
-            lineTo(centerX - arrowWidth / 2, sizePx * 0.05f + arrowHeight)
+            lineTo(centerX - arrowWidth / 2, sizePx * 0.25f + arrowHeight)
             // Arrow right side
-            lineTo(centerX + arrowWidth / 2, sizePx * 0.05f + arrowHeight)
+            lineTo(centerX + arrowWidth / 2, sizePx * 0.25f + arrowHeight)
             // Close the path
             close()
         }
@@ -206,10 +206,10 @@ private fun createDroneIconWithArrow(context: android.content.Context): BitmapDe
         // Draw the arrow
         canvas.drawPath(arrowPath, arrowPaint)
 
-        // Add white border to arrow for better visibility
+        // Add white border to arrow for better visibility with thinner stroke
         arrowPaint.style = android.graphics.Paint.Style.STROKE
         arrowPaint.color = android.graphics.Color.WHITE
-        arrowPaint.strokeWidth = 2f
+        arrowPaint.strokeWidth = 1.5f  // Reduced from 2f to 1.5f
         canvas.drawPath(arrowPath, arrowPaint)
 
         BitmapDescriptorFactory.fromBitmap(resultBitmap)

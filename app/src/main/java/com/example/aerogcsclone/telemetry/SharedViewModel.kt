@@ -2189,18 +2189,19 @@ class SharedViewModel : ViewModel() {
     // Geofence constants - Similar to ArduPilot's FENCE_MARGIN behavior
     companion object {
         // Minimum buffer distance - triggers even when stationary
-        private const val MIN_BUFFER_METERS = 1.0  // Minimum 1m buffer
+        private const val MIN_BUFFER_METERS = 2.0  // Minimum 2m buffer (increased from 1m)
 
         // Maximum buffer distance - caps the dynamic buffer
-        private const val MAX_BUFFER_METERS = 10.0  // Maximum 10m buffer
+        // Increased to 20m to handle high-altitude/high-speed scenarios
+        private const val MAX_BUFFER_METERS = 20.0  // Maximum 20m buffer (increased from 10m)
 
         // Maximum deceleration capability (m/s²) - conservative estimate for multicopters
-        // ArduPilot typically uses 2-3 m/s² for safe deceleration
-        private const val MAX_DECEL_M_S2 = 2.5
+        // Using a more conservative value to ensure drone stops well before fence
+        private const val MAX_DECEL_M_S2 = 2.0  // Reduced from 2.5 for safety
 
         // Safety factor for stopping distance calculation
-        // Account for GPS latency, control system latency, etc.
-        private const val STOPPING_DISTANCE_SAFETY_FACTOR = 1.5
+        // Increased to account for GPS latency, control system latency, and altitude effects
+        private const val STOPPING_DISTANCE_SAFETY_FACTOR = 2.0  // Increased from 1.5
 
         // ULTRA High frequency monitoring interval - 10ms = 100 checks per second
         private const val GEOFENCE_MONITOR_INTERVAL_MS = 10L
@@ -2281,26 +2282,37 @@ class SharedViewModel : ViewModel() {
     }
 
     /**
-     * Calculate dynamic buffer distance based on current speed.
+     * Calculate dynamic buffer distance based on current speed and altitude.
      * Uses physics-based stopping distance calculation:
      * stopping_distance = v² / (2 * deceleration) * safety_factor
      *
      * This mimics ArduPilot's FENCE_MARGIN behavior where the effective
      * margin increases with speed to ensure the drone can stop before
      * reaching the actual fence boundary.
+     *
+     * Also adds altitude-based buffer: higher altitudes have more GPS error and wind effects.
      */
-    private fun calculateDynamicBuffer(currentSpeedMs: Float): Double {
-        if (currentSpeedMs <= 0) return MIN_BUFFER_METERS
+    private fun calculateDynamicBuffer(currentSpeedMs: Float, altitudeMeters: Float = 0f): Double {
+        // Base buffer from speed-based stopping distance
+        val speedBuffer = if (currentSpeedMs <= 0) {
+            0.0
+        } else {
+            // Physics: stopping distance = v² / (2a)
+            // where v = velocity, a = deceleration
+            val stoppingDistance = (currentSpeedMs * currentSpeedMs) / (2 * MAX_DECEL_M_S2)
+            // Apply safety factor to account for latencies
+            stoppingDistance * STOPPING_DISTANCE_SAFETY_FACTOR
+        }
 
-        // Physics: stopping distance = v² / (2a)
-        // where v = velocity, a = deceleration
-        val stoppingDistance = (currentSpeedMs * currentSpeedMs) / (2 * MAX_DECEL_M_S2)
+        // Altitude-based additional buffer: add 0.1m per meter of altitude (capped)
+        // This accounts for increased GPS error and wind effects at higher altitudes
+        val altitudeBuffer = (altitudeMeters * 0.1f).coerceIn(0f, 5f).toDouble()
 
-        // Apply safety factor to account for latencies
-        val safeStoppingDistance = stoppingDistance * STOPPING_DISTANCE_SAFETY_FACTOR
+        // Total buffer = speed buffer + altitude buffer + minimum
+        val totalBuffer = MIN_BUFFER_METERS + speedBuffer + altitudeBuffer
 
         // Ensure buffer is within reasonable bounds
-        return maxOf(MIN_BUFFER_METERS, minOf(MAX_BUFFER_METERS, safeStoppingDistance))
+        return minOf(MAX_BUFFER_METERS, totalBuffer)
     }
 
     /**
@@ -2331,20 +2343,21 @@ class SharedViewModel : ViewModel() {
 
         val dronePosition = LatLng(droneLat, droneLon)
         val currentSpeed = currentState.groundspeed ?: 0f
+        val currentAltitude = currentState.altitudeRelative ?: 0f
 
         // Use Mission Planner's checkGeofenceDistance - returns 0 if BREACH (outside fence)
         // Otherwise returns the cross-track distance to nearest fence edge
         val distanceToFence = GeofenceUtils.checkGeofenceDistance(dronePosition, polygon)
         val isInsideFence = distanceToFence > 0  // If distance is 0, drone is OUTSIDE fence (BREACH)
 
-        // Calculate dynamic buffer based on speed (ArduPilot FENCE_MARGIN behavior)
-        val dynamicBuffer = calculateDynamicBuffer(currentSpeed)
+        // Calculate dynamic buffer based on speed AND altitude (ArduPilot FENCE_MARGIN behavior)
+        val dynamicBuffer = calculateDynamicBuffer(currentSpeed, currentAltitude)
 
         // Log every 500ms for debugging
         val now = System.currentTimeMillis()
         if (now - lastLogTime > 500) {
             lastLogTime = now
-            Log.d("Geofence", "📍 MONITOR: inside=$isInsideFence, dist=${String.format("%.1f", distanceToFence)}m, dynamicBuffer=${String.format("%.1f", dynamicBuffer)}m, speed=${String.format("%.1f", currentSpeed)}m/s, actionTaken=$geofenceActionTaken")
+            Log.d("Geofence", "📍 MONITOR: inside=$isInsideFence, dist=${String.format("%.1f", distanceToFence)}m, dynamicBuffer=${String.format("%.1f", dynamicBuffer)}m, speed=${String.format("%.1f", currentSpeed)}m/s, alt=${String.format("%.1f", currentAltitude)}m, actionTaken=$geofenceActionTaken")
         }
 
         // ═══ MISSION PLANNER / ARDUPILOT STYLE FENCE LOGIC ═══
@@ -2393,14 +2406,29 @@ class SharedViewModel : ViewModel() {
         }
 
         // Reset state when safely back inside
-        // Only reset if: inside fence AND more than 3x max buffer from edge AND action was previously taken
-        val resetThreshold = MAX_BUFFER_METERS * 3.0
-        if (isInsideFence && distanceToFence > resetThreshold && geofenceActionTaken) {
-            Log.i("Geofence", "✓ Drone safely inside fence (${String.format("%.1f", distanceToFence)}m from edge) - Reset allowed")
+        // TWO-STAGE RESET:
+        // 1. Reset geofenceActionTaken when drone is safely inside (beyond dynamic buffer) - allows re-trigger
+        // 2. Reset warning flags only when further inside to prevent UI oscillation
+
+        // Stage 1: Reset action taken when back inside fence beyond the dynamic buffer
+        // This ensures geofence can re-trigger RTL if drone goes out again
+        // Use 2x dynamic buffer as hysteresis to prevent oscillation at boundary
+        val rearmThreshold = dynamicBuffer * 2.0
+        if (isInsideFence && distanceToFence > rearmThreshold && geofenceActionTaken) {
+            Log.i("Geofence", "✓ Drone back inside fence (${String.format("%.1f", distanceToFence)}m from edge, threshold: ${String.format("%.1f", rearmThreshold)}m) - Geofence REARMED for re-trigger")
             geofenceActionTaken = false
             rtlInitiated = false
             _geofenceViolationDetected.value = false
-            _geofenceWarningTriggered.value = false
+        }
+
+        // Stage 2: Full reset only when safely inside (3x max buffer from edge)
+        // This clears the warning UI state
+        val resetThreshold = MAX_BUFFER_METERS * 3.0
+        if (isInsideFence && distanceToFence > resetThreshold) {
+            if (_geofenceWarningTriggered.value) {
+                Log.i("Geofence", "✓ Drone safely inside fence (${String.format("%.1f", distanceToFence)}m from edge) - Warning cleared")
+                _geofenceWarningTriggered.value = false
+            }
         }
     }
 
