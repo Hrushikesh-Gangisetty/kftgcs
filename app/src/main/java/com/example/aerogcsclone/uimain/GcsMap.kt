@@ -637,9 +637,11 @@ fun GcsMap(
                     )
                 }
             }
+            // Draw polyline connecting all waypoints
             if (points.size > 1) {
-                key(points) {
-                    Polyline(points = points, width = 8f, color = Color.Blue) // Thicker for better visibility
+                // Use size and hash of points to trigger recomposition when waypoints change
+                key("waypoint_polyline_${points.size}_${points.hashCode()}") {
+                    Polyline(points = points.toList(), width = 8f, color = Color.Blue) // Thicker for better visibility
                 }
             }
         }
@@ -777,19 +779,10 @@ fun GcsMap(
         // In split plan mode, show original waypoints as gray/dimmed, and split waypoints highlighted
         if (gridWaypoints.isNotEmpty()) {
             if (splitPlanMode && splitGridWaypoints.isNotEmpty()) {
-                // In split mode: show original waypoints as dimmed (no start/end markers)
-                gridWaypoints.forEachIndexed { index, waypoint ->
-                    // Show all original waypoints as small gray markers
-                    Marker(
-                        state = MarkerState(position = waypoint),
-                        title = "G${index + 1}",
-                        icon = mediumOrangeMarker,
-                        anchor = Offset(0.5f, 0.5f),
-                        alpha = 0.3f // Dimmed
-                    )
-                }
+                // In split mode: Don't show dimmed markers to reduce clutter
+                // Grid lines already show the full pattern
 
-                // Now show split waypoints with proper start/end markers
+                // Show split waypoints with only start/end markers
                 splitGridWaypoints.forEachIndexed { index, waypoint ->
                     val isFirst = index == 0
                     val isLast = index == splitGridWaypoints.lastIndex
@@ -813,19 +806,11 @@ fun GcsMap(
                                 anchor = Offset(0.5f, 0.5f)
                             )
                         }
-                        else -> {
-                            // Intermediate waypoints - Yellow (highlighted)
-                            Marker(
-                                state = MarkerState(position = waypoint),
-                                title = "S${index + 1}",
-                                icon = mediumYellowMarker,
-                                anchor = Offset(0.5f, 0.5f)
-                            )
-                        }
+                        // No intermediate markers
                     }
                 }
             } else {
-                // Normal mode: show regular waypoints
+                // Normal mode: show only Start and End markers, no intermediate waypoints
                 gridWaypoints.forEachIndexed { index, waypoint ->
                     val isFirst = index == 0
                     val isLast = index == gridWaypoints.lastIndex
@@ -849,15 +834,7 @@ fun GcsMap(
                                 anchor = Offset(0.5f, 0.5f)
                             )
                         }
-                        else -> {
-                            // Intermediate waypoints - Orange
-                            Marker(
-                                state = MarkerState(position = waypoint),
-                                title = "G${index + 1}",
-                                icon = mediumOrangeMarker,
-                                anchor = Offset(0.5f, 0.5f)
-                            )
-                        }
+                        // No intermediate markers - just use grid lines
                     }
                 }
             }

@@ -224,4 +224,26 @@ object GridUtils {
         val dy = distance * cos(bearingRad)
         return moveLatLng(point, dx, dy)
     }
+
+    /**
+     * Order polygon points in clockwise order around centroid
+     * This fixes the "hourglass" rendering issue when points are added in random order
+     * @param points List of polygon points in any order
+     * @return List of points ordered clockwise
+     */
+    fun orderPointsClockwise(points: List<LatLng>): List<LatLng> {
+        if (points.size < 3) return points
+
+        // Calculate centroid
+        val centroid = calculatePolygonCenter(points)
+
+        // Sort points by angle from centroid (clockwise)
+        return points.sortedBy { point ->
+            // Calculate angle from centroid to point
+            val dx = point.longitude - centroid.longitude
+            val dy = point.latitude - centroid.latitude
+            // atan2 returns angle in radians, negate for clockwise order
+            -atan2(dy, dx)
+        }
+    }
 }

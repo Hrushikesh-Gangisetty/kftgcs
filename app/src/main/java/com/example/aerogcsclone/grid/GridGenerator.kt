@@ -100,36 +100,48 @@ class GridGenerator {
 
             if (trimmedLine != null) {
                 val (start, end) = trimmedLine
-                gridLines.add(Pair(start, end))
 
-                // Alternate direction for boustrophedon pattern (back and forth)
-                // Use actualLineIndex for alternation to maintain proper back-and-forth pattern
-                val (waypointStart, waypointEnd) = if (actualLineIndex % 2 == 0) {
-                    Pair(start, end)
+                // Split the line if it intersects with any obstacles
+                val lineSegments = if (params.obstacles.isNotEmpty()) {
+                    splitLineAroundObstacles(start, end, params.obstacles, params.obstacleBoundary)
                 } else {
-                    Pair(end, start)
+                    listOf(Pair(start, end))
                 }
 
-                // Add waypoints for this line
-                // CRITICAL: Use actualLineIndex (not i) to ensure lineIndex matches gridLines index
-                waypoints.add(GridWaypoint(
-                    position = waypointStart,
-                    altitude = params.altitude,
-                    speed = if (params.includeSpeedCommands) params.speed else null,
-                    isLineStart = true,
-                    lineIndex = actualLineIndex
-                ))
+                // Process each segment (may be multiple if split by obstacles)
+                for (segment in lineSegments) {
+                    val (segStart, segEnd) = segment
+                    gridLines.add(Pair(segStart, segEnd))
 
-                waypoints.add(GridWaypoint(
-                    position = waypointEnd,
-                    altitude = params.altitude,
-                    speed = if (params.includeSpeedCommands) params.speed else null,
-                    isLineEnd = true,
-                    lineIndex = actualLineIndex
-                ))
+                    // Alternate direction for boustrophedon pattern (back and forth)
+                    // Use actualLineIndex for alternation to maintain proper back-and-forth pattern
+                    val (waypointStart, waypointEnd) = if (actualLineIndex % 2 == 0) {
+                        Pair(segStart, segEnd)
+                    } else {
+                        Pair(segEnd, segStart)
+                    }
 
-                // Increment actual line counter after adding a valid line
-                actualLineIndex++
+                    // Add waypoints for this line
+                    // CRITICAL: Use actualLineIndex (not i) to ensure lineIndex matches gridLines index
+                    waypoints.add(GridWaypoint(
+                        position = waypointStart,
+                        altitude = params.altitude,
+                        speed = if (params.includeSpeedCommands) params.speed else null,
+                        isLineStart = true,
+                        lineIndex = actualLineIndex
+                    ))
+
+                    waypoints.add(GridWaypoint(
+                        position = waypointEnd,
+                        altitude = params.altitude,
+                        speed = if (params.includeSpeedCommands) params.speed else null,
+                        isLineEnd = true,
+                        lineIndex = actualLineIndex
+                    ))
+
+                    // Increment actual line counter after adding a valid line
+                    actualLineIndex++
+                }
             }
         }
 
@@ -178,6 +190,192 @@ class GridGenerator {
         } else {
             null
         }
+    }
+
+    /**
+     * Split a line around obstacle zones
+     * Returns a list of line segments that avoid the obstacles
+     *
+     * @param start Start point of the line
+     * @param end End point of the line
+     * @param obstacles List of obstacle polygons
+     * @param boundaryBuffer Buffer distance in meters to maintain from obstacles
+     * @return List of line segments that don't intersect obstacles
+     */
+    private fun splitLineAroundObstacles(
+        start: LatLng,
+        end: LatLng,
+        obstacles: List<List<LatLng>>,
+        boundaryBuffer: Float
+    ): List<Pair<LatLng, LatLng>> {
+        // Use higher sampling for better accuracy
+        val numSamples = 200
+        val segments = mutableListOf<Pair<LatLng, LatLng>>()
+
+        // Pre-process obstacles: order points and expand by buffer
+        val expandedObstacles = obstacles.mapNotNull { obstacle ->
+            if (obstacle.size >= 3) {
+                val ordered = GridUtils.orderPointsClockwise(obstacle)
+                expandPolygon(ordered, boundaryBuffer.toDouble())
+            } else null
+        }
+
+        if (expandedObstacles.isEmpty()) {
+            return listOf(Pair(start, end))
+        }
+
+        // Sample points along the line and mark which are inside obstacles
+        val pointsAlongLine = mutableListOf<Pair<LatLng, Boolean>>() // Point and whether it's valid (not in obstacle)
+
+        for (i in 0..numSamples) {
+            val t = i.toDouble() / numSamples
+            val lat = start.latitude + t * (end.latitude - start.latitude)
+            val lng = start.longitude + t * (end.longitude - start.longitude)
+            val point = LatLng(lat, lng)
+
+            // Check if point is inside any expanded obstacle
+            var isInsideObstacle = false
+            for (expandedObstacle in expandedObstacles) {
+                if (GridUtils.isPointInPolygon(point, expandedObstacle)) {
+                    isInsideObstacle = true
+                    break
+                }
+            }
+
+            pointsAlongLine.add(Pair(point, !isInsideObstacle))
+        }
+
+        // Build segments from consecutive valid points
+        var segmentStart: LatLng? = null
+        var lastValidPoint: LatLng? = null
+        var validPointCount = 0
+
+        for ((point, isValid) in pointsAlongLine) {
+            if (isValid) {
+                if (segmentStart == null) {
+                    segmentStart = point
+                }
+                lastValidPoint = point
+                validPointCount++
+            } else {
+                // End of a valid segment - require minimum length (at least 3 sample points)
+                if (segmentStart != null && lastValidPoint != null && validPointCount >= 3) {
+                    val segLength = GridUtils.haversineDistance(segmentStart, lastValidPoint)
+                    // Only add segment if it's at least 1 meter long
+                    if (segLength >= 1.0) {
+                        segments.add(Pair(segmentStart, lastValidPoint))
+                    }
+                }
+                segmentStart = null
+                lastValidPoint = null
+                validPointCount = 0
+            }
+        }
+
+        // Add final segment if exists
+        if (segmentStart != null && lastValidPoint != null && validPointCount >= 3) {
+            val segLength = GridUtils.haversineDistance(segmentStart, lastValidPoint)
+            if (segLength >= 1.0) {
+                segments.add(Pair(segmentStart, lastValidPoint))
+            }
+        }
+
+        // If no segments found but all points were valid, return original line
+        return if (segments.isEmpty() && pointsAlongLine.all { it.second }) {
+            listOf(Pair(start, end))
+        } else if (segments.isEmpty()) {
+            // Line entirely inside obstacle - return empty
+            emptyList()
+        } else {
+            segments
+        }
+    }
+
+    /**
+     * Expand a polygon by a given distance (buffer) using proper offset algorithm
+     * Each edge is moved outward by the buffer distance, and new vertices are calculated
+     * at the intersection of offset edges
+     *
+     * @param polygon Original polygon vertices (should be in order)
+     * @param bufferMeters Buffer distance in meters
+     * @return Expanded polygon
+     */
+    private fun expandPolygon(polygon: List<LatLng>, bufferMeters: Double): List<LatLng> {
+        if (polygon.size < 3 || bufferMeters <= 0) return polygon
+
+        // First, ensure polygon is ordered clockwise
+        val orderedPolygon = GridUtils.orderPointsClockwise(polygon)
+        val n = orderedPolygon.size
+        val expanded = mutableListOf<LatLng>()
+
+        for (i in 0 until n) {
+            val prev = orderedPolygon[(i - 1 + n) % n]
+            val curr = orderedPolygon[i]
+            val next = orderedPolygon[(i + 1) % n]
+
+            // Calculate edge directions for adjacent edges
+            // Direction from prev to curr
+            val dx1 = curr.longitude - prev.longitude
+            val dy1 = curr.latitude - prev.latitude
+            val len1 = sqrt(dx1 * dx1 + dy1 * dy1)
+
+            // Direction from curr to next
+            val dx2 = next.longitude - curr.longitude
+            val dy2 = next.latitude - curr.latitude
+            val len2 = sqrt(dx2 * dx2 + dy2 * dy2)
+
+            if (len1 == 0.0 || len2 == 0.0) {
+                expanded.add(curr)
+                continue
+            }
+
+            // Normalize the direction vectors
+            val nx1 = dx1 / len1
+            val ny1 = dy1 / len1
+            val nx2 = dx2 / len2
+            val ny2 = dy2 / len2
+
+            // Outward normals (perpendicular, pointing outward for clockwise polygon)
+            // For edge 1 (prev->curr): normal points to the right
+            val outNx1 = ny1
+            val outNy1 = -nx1
+            // For edge 2 (curr->next): normal points to the right
+            val outNx2 = ny2
+            val outNy2 = -nx2
+
+            // Average of the two outward normals (bisector direction)
+            var bisectX = outNx1 + outNx2
+            var bisectY = outNy1 + outNy2
+            val bisectLen = sqrt(bisectX * bisectX + bisectY * bisectY)
+
+            if (bisectLen < 0.001) {
+                // Edges are nearly parallel, use one normal
+                bisectX = outNx1
+                bisectY = outNy1
+            } else {
+                bisectX /= bisectLen
+                bisectY /= bisectLen
+            }
+
+            // Calculate the offset distance along the bisector
+            // For a corner, we need to move further along the bisector to maintain buffer distance from edges
+            val dotProduct = outNx1 * bisectX + outNy1 * bisectY
+            val offsetMultiplier = if (dotProduct > 0.1) 1.0 / dotProduct else 1.0
+
+            // Convert buffer from meters to degrees (approximate)
+            // 1 degree latitude ≈ 111,111 meters
+            // 1 degree longitude ≈ 111,111 * cos(lat) meters
+            val bufferLat = bufferMeters / 111111.0
+            val bufferLng = bufferMeters / (111111.0 * cos(Math.toRadians(curr.latitude)))
+
+            // Apply offset
+            val newLat = curr.latitude + bisectY * bufferLat * offsetMultiplier
+            val newLng = curr.longitude + bisectX * bufferLng * offsetMultiplier
+
+            expanded.add(LatLng(newLat, newLng))
+        }
+
+        return expanded
     }
 
     /**
