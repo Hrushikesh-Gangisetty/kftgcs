@@ -235,7 +235,7 @@ private fun createDroneIconWithArrow(context: android.content.Context): BitmapDe
         // Draw a smaller arrow pointing upward (north/0°) to indicate the nose direction
         val arrowPaint = android.graphics.Paint().apply {
             isAntiAlias = true
-            color = android.graphics.Color.WHITE
+            color = android.graphics.Color.BLUE
             style = android.graphics.Paint.Style.FILL_AND_STROKE
             strokeWidth = 1f
         }

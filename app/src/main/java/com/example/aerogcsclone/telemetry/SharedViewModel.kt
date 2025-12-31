@@ -2046,56 +2046,64 @@ class SharedViewModel : ViewModel() {
     }
 
     // Spray control configuration
-    // Set to true to use RC_CHANNELS_OVERRIDE, false to use DO_SET_SERVO
-    // RC_CHANNELS_OVERRIDE is better for real-time control but requires RC passthrough to be enabled
-    // DO_SET_SERVO directly sets servo output, works on most setups
-    private val USE_RC_OVERRIDE_FOR_SPRAY = false
-    private val SPRAY_SERVO_NUMBER = 7 // SERVO7 output (can be changed based on hardware setup)
-    private val SPRAY_RC_CHANNEL = 7 // RC channel 7 (if using RC override)
+    // ArduPilot Sprayer library integration:
+    // - SERVO9_FUNCTION = 22 (SprayerPump) - ArduPilot's Sprayer library controls the pump
+    // - Uses MAV_CMD_DO_SPRAYER (216) to enable/disable spraying
+    // - Uses SPRAY_RATE parameter (0-100%) to control pump duty cycle
+    // - PWM range is controlled by SERVO9_MIN (1050) and SERVO9_MAX (1950) on the FC
+    private val MAV_CMD_DO_SPRAYER = 216u
 
     /**
-     * Control spray system by setting servo PWM output.
-     * Uses either DO_SET_SERVO or RC_CHANNELS_OVERRIDE based on configuration.
+     * Control spray system using ArduPilot's Sprayer library.
      *
-     * PWM mapping:
-     * - OFF: 1000 PWM
-     * - 10% rate: 1100 PWM
-     * - 50% rate: 1500 PWM
-     * - 100% rate: 2000 PWM
+     * Since SERVO9_FUNCTION = 22 (SprayerPump), the ArduPilot Sprayer library owns the servo output.
+     * Direct DO_SET_SERVO commands won't work because the library overrides them.
      *
-     * @param enable true to enable spray at current rate, false to disable (PWM = 1000)
+     * This implementation uses:
+     * 1. SPRAY_RATE parameter (0-100%) - Controls the maximum pump duty cycle
+     * 2. MAV_CMD_DO_SPRAYER (216) - Enables/disables the sprayer
+     *
+     * The Sprayer library then calculates actual PWM output based on:
+     * - SPRAY_RATE: The maximum pump rate percentage
+     * - Ground speed (when SPRAY_SPEED_MIN > 0)
+     * - Target coverage rate
+     *
+     * Hardware notes (Hobbywing 5L Pump):
+     * - PWM 1050 µs = minimum throttle (0%)
+     * - PWM 1950 µs = maximum throttle (100% = 5 L/min)
+     * - Linear interpolation between min and max
+     *
+     * @param enable true to enable spray at current rate, false to disable
      */
     fun controlSpray(enable: Boolean) {
         viewModelScope.launch {
-            val pwmValue = if (enable) {
-                // Map spray rate (10-100%) to PWM range (1100-2000)
-                // Formula: PWM = 1000 + (rate/100 * 1000)
-                // At 10%: 1000 + (10/100 * 1000) = 1100
-                // At 100%: 1000 + (100/100 * 1000) = 2000
-                val rate = _sprayRate.value.coerceIn(10f, 100f)
-                val pwm = (1000 + (rate / 100f * 1000f)).toInt()
-                pwm.coerceIn(1100, 2000)
-            } else {
-                1000 // OFF
-            }
+            val rate = _sprayRate.value.coerceIn(10f, 100f)
 
             Log.i("SprayControl", "═══════════════════════════════════════")
-            Log.i("SprayControl", "🚿 SPRAY COMMAND")
+            Log.i("SprayControl", "🚿 SPRAY COMMAND (Sprayer Library Mode)")
             Log.i("SprayControl", "   State: ${if (enable) "ON" else "OFF"}")
-            Log.i("SprayControl", "   Rate: ${_sprayRate.value.toInt()}%")
-            Log.i("SprayControl", "   PWM: $pwmValue")
-            Log.i("SprayControl", "   Method: ${if (USE_RC_OVERRIDE_FOR_SPRAY) "RC_CHANNELS_OVERRIDE (ch$SPRAY_RC_CHANNEL)" else "DO_SET_SERVO (servo $SPRAY_SERVO_NUMBER)"}")
+            Log.i("SprayControl", "   SPRAY_RATE: ${rate.toInt()}%")
+            Log.i("SprayControl", "   Method: MAV_CMD_DO_SPRAYER + SPRAY_RATE param")
             Log.i("SprayControl", "═══════════════════════════════════════")
 
             repo?.let { repository ->
                 try {
-                    if (USE_RC_OVERRIDE_FOR_SPRAY) {
-                        // Use RC_CHANNELS_OVERRIDE for real-time control
-                        repository.sendRcChannelOverride(SPRAY_RC_CHANNEL, pwmValue.toUShort())
+                    // Step 1: Set the SPRAY_RATE parameter to control duty cycle
+                    // This parameter controls the maximum pump output (0-100%)
+                    val paramResult = setParameter("SPRAY_RATE", rate)
+                    if (paramResult != null) {
+                        Log.i("SprayControl", "✓ SPRAY_RATE set to ${rate.toInt()}%")
                     } else {
-                        // Use DO_SET_SERVO for direct servo control
-                        repository.sendServoCommand(SPRAY_SERVO_NUMBER, pwmValue)
+                        Log.w("SprayControl", "⚠ SPRAY_RATE set (no confirmation received)")
                     }
+
+                    // Step 2: Send DO_SPRAYER command to enable/disable
+                    // MAV_CMD_DO_SPRAYER (216): param1 = 1 (enable) or 0 (disable)
+                    repository.sendCommandRaw(
+                        commandId = MAV_CMD_DO_SPRAYER,
+                        param1 = if (enable) 1f else 0f
+                    )
+                    Log.i("SprayControl", "✓ DO_SPRAYER command sent: ${if (enable) "ENABLE" else "DISABLE"}")
                     Log.i("SprayControl", "✓ Command sent successfully")
                 } catch (e: Exception) {
                     Log.e("SprayControl", "✗ Failed to send spray command: ${e.message}", e)
@@ -2147,10 +2155,10 @@ class SharedViewModel : ViewModel() {
         sprayRateDebounceJob = viewModelScope.launch {
             delay(SPRAY_RATE_DEBOUNCE_MS)
             if (_sprayEnabled.value) {
-                Log.i("SprayControl", "🚿 Rate changed to ${newRate.toInt()}% - updating PWM")
+                Log.i("SprayControl", "🚿 Rate changed to ${newRate.toInt()}% - updating SPRAY_RATE parameter")
                 controlSpray(true) // Re-send with new rate
             } else {
-                Log.d("SprayControl", "Rate set to ${newRate.toInt()}% (spray disabled, command will be sent when enabled)")
+                Log.d("SprayControl", "Rate set to ${newRate.toInt()}% (spray disabled, SPRAY_RATE will be set when enabled)")
             }
         }
     }
