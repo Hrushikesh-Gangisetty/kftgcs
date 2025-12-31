@@ -16,6 +16,7 @@ import androidx.compose.ui.window.DialogProperties
 
 /**
  * Dialog for choosing between loading existing template or creating new mission
+ * Uses horizontal layout to avoid scrolling
  */
 @Composable
 fun MissionChoiceDialog(
@@ -28,19 +29,20 @@ fun MissionChoiceDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(
             dismissOnBackPress = true,
-            dismissOnClickOutside = true
+            dismissOnClickOutside = true,
+            usePlatformDefaultWidth = false
         )
     ) {
         Card(
             modifier = Modifier
-                .fillMaxWidth()
+                .wrapContentWidth()
                 .padding(16.dp),
             shape = RoundedCornerShape(16.dp),
             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
         ) {
             Column(
                 modifier = Modifier
-                    .fillMaxWidth()
+                    .wrapContentWidth()
                     .padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
@@ -48,87 +50,112 @@ fun MissionChoiceDialog(
                 Icon(
                     imageVector = Icons.Default.FlightTakeoff,
                     contentDescription = null,
-                    modifier = Modifier.size(48.dp),
+                    modifier = Modifier.size(36.dp),
                     tint = MaterialTheme.colorScheme.primary
                 )
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
                 Text(
                     text = "Mission Planning",
-                    style = MaterialTheme.typography.headlineSmall,
+                    style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center
                 )
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
-                Text(
-                    text = "Choose how you want to start your mission planning",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center
-                )
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                // Options
-                if (hasTemplates) {
-                    Button(
-                        onClick = onLoadExisting,
-                        modifier = Modifier.fillMaxWidth(),
-                        contentPadding = PaddingValues(16.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.FolderOpen,
-                            contentDescription = null,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text("Load Existing Template")
+                // Horizontal button layout
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Load Existing Template Button
+                    if (hasTemplates) {
+                        Button(
+                            onClick = onLoadExisting,
+                            modifier = Modifier
+                                .width(130.dp)
+                                .height(80.dp),
+                            contentPadding = PaddingValues(12.dp),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.FolderOpen,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Load",
+                                    fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                Text(
+                                    text = "Template",
+                                    style = MaterialTheme.typography.labelSmall
+                                )
+                            }
+                        }
                     }
 
-                    Spacer(modifier = Modifier.height(12.dp))
-                }
-
-                OutlinedButton(
-                    onClick = onCreateNew,
-                    modifier = Modifier.fillMaxWidth(),
-                    contentPadding = PaddingValues(16.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Add,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Text("Create New Mission")
+                    // Create New Mission Button
+                    OutlinedButton(
+                        onClick = onCreateNew,
+                        modifier = Modifier
+                            .width(130.dp)
+                            .height(80.dp),
+                        contentPadding = PaddingValues(12.dp),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = null,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Create",
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Text(
+                                text = "New",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 }
 
                 if (!hasTemplates) {
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
                     Card(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.wrapContentWidth(),
                         colors = CardDefaults.cardColors(
                             containerColor = MaterialTheme.colorScheme.surfaceVariant
                         )
                     ) {
                         Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
+                            modifier = Modifier.padding(12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Info,
                                 contentDescription = null,
-                                modifier = Modifier.size(20.dp),
+                                modifier = Modifier.size(16.dp),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            Spacer(modifier = Modifier.width(12.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "No templates saved yet. Create your first mission plan!",
+                                text = "No templates saved yet",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )

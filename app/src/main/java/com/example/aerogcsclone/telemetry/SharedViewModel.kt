@@ -2130,13 +2130,32 @@ class SharedViewModel : ViewModel() {
 
     /**
      * Disable spray when mode changes from Auto to another mode
-     * This ensures spray is turned off when pilot takes manual control
+     * This ensures spray is turned off when pilot takes manual control or mission is paused/aborted.
+     * Always sends DO_SPRAYER(0) to FC regardless of app state, because mission-embedded
+     * DO_SPRAYER commands may have turned sprayer on without updating app state.
      */
     fun disableSprayOnModeChange() {
+        Log.i("SprayControl", "🚿 Disabling spray due to mode change from Auto")
+
+        // Always send DO_SPRAYER(0) to FC to ensure sprayer is OFF
+        // This is critical because mission-embedded DO_SPRAYER commands work independently of app state
+        viewModelScope.launch {
+            repo?.let { repository ->
+                try {
+                    repository.sendCommandRaw(
+                        commandId = MAV_CMD_DO_SPRAYER,
+                        param1 = 0f  // 0 = Disable sprayer
+                    )
+                    Log.i("SprayControl", "✓ DO_SPRAYER(0) sent to FC - sprayer disabled")
+                } catch (e: Exception) {
+                    Log.e("SprayControl", "✗ Failed to send DO_SPRAYER disable: ${e.message}", e)
+                }
+            }
+        }
+
+        // Also update app state if it was enabled
         if (_sprayEnabled.value) {
-            Log.i("SprayControl", "🚿 Auto-disabling spray due to mode change from Auto")
             _sprayEnabled.value = false
-            controlSpray(false)
             addNotification(Notification("Spray disabled - Mode changed from Auto", NotificationType.INFO))
             showSprayStatusPopup("Spray Disabled (Mode Change)")
         }
@@ -2617,14 +2636,15 @@ class SharedViewModel : ViewModel() {
     companion object {
         // Minimum buffer distance - triggers even when stationary
         // This is the absolute minimum distance from fence before triggering
-        private const val MIN_BUFFER_METERS = 2.0  // Minimum 2m buffer
+        // Set to 2m so drone starts braking at 2-3m and stops near the outer fence (4m)
+        private const val MIN_BUFFER_METERS = 3.5  // Start braking at 2m from inner fence
 
         // Maximum buffer distance - caps the dynamic buffer at high speeds
-        private const val MAX_BUFFER_METERS = 10.0  // Maximum 10m buffer for high speed scenarios
+        private const val MAX_BUFFER_METERS = 9.0  // Maximum 12m buffer for high speed scenarios
 
         // Maximum deceleration capability (m/s²) - conservative estimate for multicopters
         // Using 3.0 for safe braking estimate (drones can do 3-5, but wind/load affects this)
-        private const val MAX_DECEL_M_S2 = 3.0  // Conservative deceleration
+        private const val MAX_DECEL_M_S2 = 5.5  // Conservative deceleration
 
         // System latency in seconds (GPS + telemetry + command execution)
         // GPS: ~200ms, Telemetry: ~100ms, Command: ~200ms = ~500ms total
@@ -2634,7 +2654,7 @@ class SharedViewModel : ViewModel() {
         private const val STOPPING_DISTANCE_SAFETY_FACTOR = 1.3  // 30% safety margin
 
         // ULTRA High frequency monitoring interval - 10ms = 100 checks per second
-        private const val GEOFENCE_MONITOR_INTERVAL_MS = 10L
+        private const val GEOFENCE_MONITOR_INTERVAL_MS = 5L
 
         // Continuous command sending interval when breached - VERY AGGRESSIVE
         private const val BRAKE_COMMAND_INTERVAL_MS = 50L
@@ -2657,6 +2677,15 @@ class SharedViewModel : ViewModel() {
     // Track if RTL process has started - stops continuous BRAKE commands from interfering
     @Volatile
     private var rtlInitiated = false
+
+    // Track if geofence is currently triggering a mode change (BRAKE/RTL)
+    // Used to prevent resume popup from showing when geofence falls back to LOITER
+    @Volatile
+    private var geofenceTriggeringModeChange = false
+
+    // Expose geofence triggering state for TelemetryRepository
+    val isGeofenceTriggeringModeChange: Boolean
+        get() = geofenceTriggeringModeChange
 
     // Track continuous brake sending
     @Volatile
@@ -2723,12 +2752,13 @@ class SharedViewModel : ViewModel() {
      *
      * This ensures the drone triggers brake EARLY ENOUGH to stop before the fence,
      * accounting for GPS, telemetry, and command execution delays.
+     * With 3m min buffer, drone will stop near the outer fence (2m offset).
      *
      * Examples at different speeds:
-     * - 0 m/s:  2m (minimum buffer only)
-     * - 3 m/s:  2 + 1.5 + 1.95 = 5.45m
-     * - 5 m/s:  2 + 2.5 + 5.42 = 9.92m
-     * - 8 m/s:  2 + 4.0 + 13.87 = capped at 10m
+     * - 0 m/s:  3m (minimum buffer only - stops at outer fence)
+     * - 3 m/s:  3 + 1.5 + 1.95 = 6.45m
+     * - 5 m/s:  3 + 2.5 + 5.42 = 10.92m
+     * - 8 m/s:  3 + 4.0 + 13.87 = capped at 12m
      */
     private fun calculateDynamicBuffer(currentSpeedMs: Float, altitudeMeters: Float = 0f): Double {
         if (currentSpeedMs <= 0) {
@@ -2878,6 +2908,7 @@ class SharedViewModel : ViewModel() {
     private fun sendBrakeCommandImmediate() {
         viewModelScope.launch {
             try {
+                geofenceTriggeringModeChange = true  // Mark that geofence is triggering mode change
                 val brakeSuccess = repo?.changeMode(MavMode.BRAKE) ?: false
                 if (!brakeSuccess) {
                     // Fallback to LOITER which also stops movement
@@ -2907,6 +2938,9 @@ class SharedViewModel : ViewModel() {
                 Log.i("Geofence", "═══════════════════════════════════════════════════")
                 Log.i("Geofence", "🚨 EMERGENCY GEOFENCE BREACH - STOPPING DRONE!")
                 Log.i("Geofence", "═══════════════════════════════════════════════════")
+
+                // Mark that geofence is triggering mode change - prevents resume popup
+                geofenceTriggeringModeChange = true
 
                 // STEP 1: Send BRAKE command to stop immediately
                 try {
@@ -2977,6 +3011,12 @@ class SharedViewModel : ViewModel() {
                 Log.i("Geofence", "═══════════════════════════════════════════════════")
                 Log.i("Geofence", "✓ EMERGENCY GEOFENCE RESPONSE COMPLETE")
                 Log.i("Geofence", "═══════════════════════════════════════════════════")
+
+                // Reset the geofence triggering flag after a short delay
+                // This ensures mode change detection doesn't show resume popup during geofence action
+                delay(2000)
+                geofenceTriggeringModeChange = false
+                Log.d("Geofence", "Geofence mode change flag reset")
             } ?: Log.e("Geofence", "❌ No connection - cannot send emergency commands!")
         }
     }

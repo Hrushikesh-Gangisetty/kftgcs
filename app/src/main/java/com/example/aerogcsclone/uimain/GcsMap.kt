@@ -21,8 +21,8 @@ import java.util.Locale
 
 // Helper function to create larger marker icons for waypoints - easier to interact with
 private fun createMediumMarker(hue: Float): BitmapDescriptor {
-    // Create a larger bitmap for better touch targets (increased from 32px to 56px)
-    val size = 56
+    // Create a larger bitmap for better touch targets (72px for mobile-friendly interaction)
+    val size = 72
     val width = size
     val height = size
 
@@ -45,16 +45,16 @@ private fun createMediumMarker(hue: Float): BitmapDescriptor {
         style = android.graphics.Paint.Style.FILL
     }
 
-    canvas.drawCircle(width / 2f, height / 2f, width / 2f - 3, paint)
+    canvas.drawCircle(width / 2f, height / 2f, width / 2f - 4, paint)
 
     // Add a thicker white border for better visibility
     paint.style = android.graphics.Paint.Style.STROKE
-    paint.strokeWidth = 4f
+    paint.strokeWidth = 5f
     paint.color = android.graphics.Color.WHITE
-    canvas.drawCircle(width / 2f, height / 2f, width / 2f - 3, paint)
+    canvas.drawCircle(width / 2f, height / 2f, width / 2f - 4, paint)
 
     // Add a thin dark outline for contrast on light backgrounds
-    paint.strokeWidth = 1.5f
+    paint.strokeWidth = 2f
     paint.color = android.graphics.Color.DKGRAY
     canvas.drawCircle(width / 2f, height / 2f, width / 2f - 1, paint)
 
@@ -395,20 +395,28 @@ fun GcsMap(
                 // Add draggable markers for geofence adjustment when enabled
                 if (geofenceAdjustmentEnabled) {
                     geofencePolygon.forEachIndexed { index, point ->
-                        key("geofence_${index}_${point.latitude}_${point.longitude}") { // Include coordinates in key for proper recomposition
+                        // Use only index in key to prevent marker recreation during drag
+                        key("geofence_vertex_$index") {
                             val markerState = rememberMarkerState(
+                                key = "geofence_marker_$index", // Stable key for marker state
                                 position = point
                             )
 
-                            // Force update marker position when point changes
+                            // Force update marker position when source point changes (from external update)
                             LaunchedEffect(point) {
-                                markerState.position = point
+                                if (markerState.position != point) {
+                                    markerState.position = point
+                                }
                             }
 
-                            // Listen to marker position changes for drag events
+                            // Listen to marker position changes for drag events with debounce
                             LaunchedEffect(markerState.position) {
-                                if (markerState.position != point) {
-                                    onGeofencePointDrag(index, markerState.position)
+                                // Only trigger callback if position actually differs from source
+                                val newPos = markerState.position
+                                val hasMoved = kotlin.math.abs(newPos.latitude - point.latitude) > 0.0000001 ||
+                                              kotlin.math.abs(newPos.longitude - point.longitude) > 0.0000001
+                                if (hasMoved) {
+                                    onGeofencePointDrag(index, newPos)
                                 }
                             }
 
@@ -425,6 +433,7 @@ fun GcsMap(
                                 icon = markerIcon,
                                 anchor = Offset(0.5f, 0.5f),
                                 draggable = true,  // Enable dragging
+                                zIndex = 10f, // Higher z-index for geofence markers to be on top
                                 onClick = {
                                     // Marker clicked, can be dragged now
                                     onGeofencePointClick(index) // Handle geofence point click
@@ -438,9 +447,9 @@ fun GcsMap(
         }
 
         // ===== OUTER FENCE RENDERING =====
-        // Render outer fence 2m away from the normal geofence with yellow background
+        // Render outer fence 4m away from the normal geofence with yellow background
         if (geofenceEnabled && geofencePolygon.isNotEmpty() && geofencePolygon.size >= 3) {
-            val outerFencePolygon = calculateOuterFence(geofencePolygon, 2.0) // 2 meters offset
+            val outerFencePolygon = calculateOuterFence(geofencePolygon, 6.0) // 4 meters offset
 
             if (outerFencePolygon.isNotEmpty()) {
                 // Fill the outer fence area with semi-transparent yellow

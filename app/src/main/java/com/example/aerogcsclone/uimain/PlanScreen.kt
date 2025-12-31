@@ -1833,30 +1833,7 @@ fun PlanScreen(
                             )
                         }
 
-                        // Hold Nose Position
-                        Column(modifier = Modifier.padding(vertical = 4.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("Hold Nose Position", color = Color.White, modifier = Modifier.weight(1f))
-                                Switch(
-                                    checked = holdNosePosition,
-                                    onCheckedChange = { holdNosePosition = it },
-                                    colors = SwitchDefaults.colors(
-                                        checkedThumbColor = Color.White,
-                                        checkedTrackColor = Color.Green, // Green when ON
-                                        uncheckedThumbColor = Color.White,
-                                        uncheckedTrackColor = Color.Red // Red when OFF
-                                    )
-                                )
-                            }
-                            Text(
-                                "Nose will hold current position during survey lines",
-                                color = Color.Gray,
-                                style = MaterialTheme.typography.bodySmall,
-                                modifier = Modifier.padding(top = 4.dp)
-                            )
-                        }
-
-                        // Auto Spray
+                        // Auto Spray (moved above Hold Nose Position)
                         Column(modifier = Modifier.padding(vertical = 4.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text("Auto Spray", color = Color.White, modifier = Modifier.weight(1f))
@@ -1879,7 +1856,7 @@ fun PlanScreen(
                             )
                         }
 
-                        // Spray Rate Slider (PWM-based control)
+                        // Spray Rate Slider (moved above Hold Nose Position)
                         // PWM mapping: OFF=1000, 10%=1100, 50%=1500, 100%=2000
                         // Uses DO_SET_SERVO (SERVO7) by default
                         Column(modifier = Modifier.padding(vertical = 4.dp)) {
@@ -1938,6 +1915,29 @@ fun PlanScreen(
                                 color = Color.Gray,
                                 style = MaterialTheme.typography.bodySmall,
                                 modifier = Modifier.padding(top = 2.dp)
+                            )
+                        }
+
+                        // Hold Nose Position (moved below spray controls)
+                        Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("Hold Nose Position", color = Color.White, modifier = Modifier.weight(1f))
+                                Switch(
+                                    checked = holdNosePosition,
+                                    onCheckedChange = { holdNosePosition = it },
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = Color.White,
+                                        checkedTrackColor = Color.Green, // Green when ON
+                                        uncheckedThumbColor = Color.White,
+                                        uncheckedTrackColor = Color.Red // Red when OFF
+                                    )
+                                )
+                            }
+                            Text(
+                                "Nose will hold current position during survey lines",
+                                color = Color.Gray,
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.padding(top = 4.dp)
                             )
                         }
 

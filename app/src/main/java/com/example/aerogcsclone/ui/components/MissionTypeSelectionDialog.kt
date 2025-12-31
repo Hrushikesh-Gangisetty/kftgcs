@@ -17,6 +17,7 @@ import androidx.compose.ui.window.DialogProperties
 
 /**
  * Initial dialog for selecting mission type: Grid or Waypoint
+ * Uses horizontal layout to avoid scrolling
  */
 @Composable
 fun MissionTypeSelectionDialog(
@@ -28,19 +29,20 @@ fun MissionTypeSelectionDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(
             dismissOnBackPress = true,
-            dismissOnClickOutside = true
+            dismissOnClickOutside = true,
+            usePlatformDefaultWidth = false
         )
     ) {
         Card(
             modifier = Modifier
-                .fillMaxWidth()
+                .wrapContentWidth()
                 .padding(16.dp),
             shape = RoundedCornerShape(16.dp),
             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
         ) {
             Column(
                 modifier = Modifier
-                    .fillMaxWidth()
+                    .wrapContentWidth()
                     .padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
@@ -48,91 +50,98 @@ fun MissionTypeSelectionDialog(
                 Icon(
                     imageVector = Icons.Default.FlightTakeoff,
                     contentDescription = null,
-                    modifier = Modifier.size(48.dp),
+                    modifier = Modifier.size(36.dp),
                     tint = MaterialTheme.colorScheme.primary
                 )
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
                 Text(
                     text = "Select Mission Type",
-                    style = MaterialTheme.typography.headlineSmall,
+                    style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center
                 )
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
-                Text(
-                    text = "Choose the type of mission you want to plan",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center
-                )
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                // Grid Mission Button
-                Button(
-                    onClick = onSelectGrid,
-                    modifier = Modifier.fillMaxWidth(),
-                    contentPadding = PaddingValues(16.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary
-                    )
+                // Horizontal button layout
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.GridOn,
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column {
-                        Text(
-                            text = "Grid",
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = "Auto-generated survey pattern",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.White.copy(alpha = 0.8f)
-                        )
+                    // Grid Mission Button
+                    Button(
+                        onClick = onSelectGrid,
+                        modifier = Modifier
+                            .width(140.dp)
+                            .height(80.dp),
+                        contentPadding = PaddingValues(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary
+                        ),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.GridOn,
+                                contentDescription = null,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Grid",
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Text(
+                                text = "Auto survey",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.White.copy(alpha = 0.8f)
+                            )
+                        }
+                    }
+
+                    // Waypoint Mission Button
+                    OutlinedButton(
+                        onClick = onSelectWaypoint,
+                        modifier = Modifier
+                            .width(140.dp)
+                            .height(80.dp),
+                        contentPadding = PaddingValues(12.dp),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Place,
+                                contentDescription = null,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Waypoint",
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Text(
+                                text = "Manual",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Waypoint Mission Button
-                OutlinedButton(
-                    onClick = onSelectWaypoint,
-                    modifier = Modifier.fillMaxWidth(),
-                    contentPadding = PaddingValues(16.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Place,
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column {
-                        Text(
-                            text = "Waypoint",
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = "Manual waypoint placement",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
                 // Cancel button
                 TextButton(
                     onClick = onDismiss,
-                    modifier = Modifier.align(Alignment.End)
+                    modifier = Modifier.align(Alignment.CenterHorizontally)
                 ) {
                     Text("Cancel")
                 }

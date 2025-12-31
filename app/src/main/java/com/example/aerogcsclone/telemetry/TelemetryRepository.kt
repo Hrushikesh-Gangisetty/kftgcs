@@ -853,13 +853,14 @@ class MavlinkTelemetryRepository(
                             missionTimerJob = null
 
                             // === NEW: Detect AUTO → LOITER transition for "Add Resume Here" popup ===
-                            if (mode.equals("Loiter", ignoreCase = true)) {
+                            // Only show popup if this is a user-initiated LOITER, not geofence-triggered
+                            if (mode.equals("Loiter", ignoreCase = true) && !sharedViewModel.isGeofenceTriggeringModeChange) {
                                 // Get the current waypoint as the resume point
                                 val resumeWaypoint = state.value.lastAutoWaypoint.takeIf { it > 0 }
                                     ?: state.value.currentWaypoint
                                     ?: 1
 
-                                Log.i("TelemetryRepo", "🔄 AUTO → LOITER detected at waypoint $resumeWaypoint")
+                                Log.i("TelemetryRepo", "🔄 AUTO → LOITER detected at waypoint $resumeWaypoint (user-initiated)")
 
                                 // Trigger the "Add Resume Here" popup in SharedViewModel
                                 sharedViewModel.onModeChangedToLoiterFromAuto(resumeWaypoint)
@@ -869,6 +870,9 @@ class MavlinkTelemetryRepository(
                                 if (lastElapsed != null && lastElapsed > 0L) {
                                     _state.update { it.copy(lastMissionElapsedSec = lastElapsed) }
                                 }
+                            } else if (mode.equals("Loiter", ignoreCase = true)) {
+                                // Geofence triggered this LOITER - don't show resume popup
+                                Log.i("TelemetryRepo", "🔄 AUTO → LOITER detected but SKIPPING resume popup (geofence-triggered)")
                             } else {
                                 // Only mark as completed if NOT paused AND not already marked
                                 if (!isPaused && !state.value.missionCompleted) {
@@ -902,6 +906,10 @@ class MavlinkTelemetryRepository(
                             missionTimerJob = null
                             _state.update { it.copy(missionElapsedSec = null) }
                             Log.i("TelemetryRepo", "Drone disarmed - timer stopped, no completion popup")
+
+                            // Also disable spray when drone is disarmed for safety
+                            Log.i("TelemetryRepo", "🚿 Drone disarmed - disabling spray for safety")
+                            sharedViewModel.disableSprayOnModeChange()
                         }
                         lastMode = mode
                         lastArmed = armed
