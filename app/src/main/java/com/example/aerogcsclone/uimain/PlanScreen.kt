@@ -702,36 +702,7 @@ fun PlanScreen(
             }
 
             // Obstacle adding mode helper text - shows at top when actively adding obstacle
-            if (isAddingObstacle && isGridSurveyMode) {
-                Card(
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .padding(top = if (geofenceEnabled) 60.dp else 16.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = Color.Red.copy(alpha = 0.95f)
-                    ),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            Icons.Default.Block,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "🚧 Adding Obstacle: Use 'Add Obstacle' button or tap map (${currentObstaclePoints.size}/4)",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.White,
-                            textAlign = TextAlign.Center
-                        )
-                    }
-                }
-            }
+
 
             // Obstacle info card (when obstacles exist or in adding mode)
             if ((obstacles.isNotEmpty() || isAddingObstacle) && isGridSurveyMode && !isGridGenerated) {
@@ -1476,56 +1447,7 @@ fun PlanScreen(
             }
 
             // Plot definition mode helper card - shows instructions when defining boundary
-            if (isGridSurveyMode && isPlotDefinitionMode && !isGridGenerated && hasStartedPlanning) {
-                Card(
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .padding(top = if (geofenceEnabled) 60.dp else 16.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = Color(0xFF2196F3).copy(alpha = 0.95f) // Blue background
-                    ),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-                ) {
-                    Column(
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                Icons.Default.Info,
-                                contentDescription = null,
-                                tint = Color.White,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Define Plot Boundary",
-                                style = MaterialTheme.typography.titleSmall,
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "Add ${if (surveyPolygon.size < 3) "${3 - surveyPolygon.size} more" else "boundary"} points, then tap 'Generate Grid'",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.White.copy(alpha = 0.9f),
-                            textAlign = TextAlign.Center
-                        )
-                        if (surveyPolygon.isNotEmpty()) {
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "${surveyPolygon.size} point${if (surveyPolygon.size > 1) "s" else ""} added" +
-                                    if (obstacles.isNotEmpty()) " • ${obstacles.size} obstacle${if (obstacles.size > 1) "s" else ""}" else "",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = Color.White.copy(alpha = 0.7f)
-                            )
-                        }
-                    }
-                }
-            }
+
 
             // Grid controls - restored original design with statistics
             // Only show after grid is generated (not during plot definition mode)
