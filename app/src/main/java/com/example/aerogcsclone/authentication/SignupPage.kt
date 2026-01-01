@@ -9,6 +9,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
@@ -31,17 +32,28 @@ import com.example.aerogcsclone.utils.AppStrings
 
 @Composable
 fun SignupPage(modifier: Modifier = Modifier, navController: NavController, authViewModel: AuthViewModel) {
+    var firstName by remember { mutableStateOf("") }
+    var lastName by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
+    var mobileNumber by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var re_password by remember { mutableStateOf("") }
     val authState = authViewModel.authState.observeAsState()
     val context = LocalContext.current
 
     LaunchedEffect(authState.value) {
         when (val state = authState.value) {
-            is AuthState.Authenticated -> navController.navigate(Screen.Connection.route) {
-                popUpTo(Screen.Signup.route) { inclusive = true }
+            is AuthState.RegistrationSuccess -> {
+                Toast.makeText(context, state.message, Toast.LENGTH_LONG).show()
+                // Navigate to OTP verification screen
+                navController.navigate("otp_verification/$email") {
+                    popUpTo(Screen.Signup.route) { inclusive = false }
+                }
             }
-            is AuthState.Error -> Toast.makeText(context, state.message, Toast.LENGTH_SHORT).show()
+            is AuthState.Error -> {
+                Toast.makeText(context, state.message, Toast.LENGTH_SHORT).show()
+                authViewModel.resetAuthState()
+            }
             else -> Unit
         }
     }
@@ -75,10 +87,60 @@ fun SignupPage(modifier: Modifier = Modifier, navController: NavController, auth
                 Spacer(modifier = Modifier.height(16.dp))
 
                 OutlinedTextField(
+                    value = firstName,
+                    onValueChange = { firstName = it },
+                    label = { Text(text = AppStrings.firstName) },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.Black,
+                        unfocusedTextColor = Color.Black,
+                        cursorColor = Color.Black,
+                        focusedBorderColor = Color.Black,
+                        unfocusedBorderColor = Color.Black,
+                        focusedLabelColor = Color.Black,
+                        unfocusedLabelColor = Color.Black
+                    )
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                OutlinedTextField(
+                    value = lastName,
+                    onValueChange = { lastName = it },
+                    label = { Text(text = AppStrings.lastName) },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.Black,
+                        unfocusedTextColor = Color.Black,
+                        cursorColor = Color.Black,
+                        focusedBorderColor = Color.Black,
+                        unfocusedBorderColor = Color.Black,
+                        focusedLabelColor = Color.Black,
+                        unfocusedLabelColor = Color.Black
+                    )
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                OutlinedTextField(
                     value = email,
                     onValueChange = { email = it },
-
                     label = { Text(text = AppStrings.email) },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.Black,
+                        unfocusedTextColor = Color.Black,
+                        cursorColor = Color.Black,
+                        focusedBorderColor = Color.Black,
+                        unfocusedBorderColor = Color.Black,
+                        focusedLabelColor = Color.Black,
+                        unfocusedLabelColor = Color.Black
+                    )
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                OutlinedTextField(
+                    value = mobileNumber,
+                    onValueChange = { mobileNumber = it },
+                    label = { Text(text = AppStrings.mobileNumber) },
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = Color.Black,
                         unfocusedTextColor = Color.Black,
@@ -95,8 +157,24 @@ fun SignupPage(modifier: Modifier = Modifier, navController: NavController, auth
                 OutlinedTextField(
                     value = password,
                     onValueChange = { password = it },
-
                     label = { Text(text = AppStrings.password) },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.Black,
+                        unfocusedTextColor = Color.Black,
+                        cursorColor = Color.Black,
+                        focusedBorderColor = Color.Black,
+                        unfocusedBorderColor = Color.Black,
+                        focusedLabelColor = Color.Black,
+                        unfocusedLabelColor = Color.Black
+                    )
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                OutlinedTextField(
+                    value = re_password,
+                    onValueChange = { re_password = it },
+                    label = { Text(text = AppStrings.re_password) },
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = Color.Black,
                         unfocusedTextColor = Color.Black,
@@ -110,8 +188,14 @@ fun SignupPage(modifier: Modifier = Modifier, navController: NavController, auth
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                Button(onClick = { authViewModel.signup(email, password) }) {
-                    Text(text = AppStrings.createAccount, color = Color.Black)
+                if (authState.value is AuthState.Loading) {
+                    CircularProgressIndicator(color = Color.Black)
+                } else {
+                    Button(onClick = {
+                        authViewModel.signup(context, firstName, lastName, email, mobileNumber, password, re_password)
+                    }) {
+                        Text(text = AppStrings.createAccount, color = Color.Black)
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
