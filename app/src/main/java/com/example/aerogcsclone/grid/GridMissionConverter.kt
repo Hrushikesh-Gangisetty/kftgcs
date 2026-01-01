@@ -1,5 +1,6 @@
 package com.example.aerogcsclone.grid
 
+import android.util.Log
 import com.divpundir.mavlink.api.MavEnumValue
 import com.divpundir.mavlink.definitions.common.*
 import com.google.android.gms.maps.model.LatLng
@@ -8,6 +9,8 @@ import com.google.android.gms.maps.model.LatLng
  * Converts grid survey waypoints to MAVLink mission items
  */
 object GridMissionConverter {
+
+    private const val TAG = "GridMissionConverter"
 
     // MAV_CMD_DO_SPRAYER command ID (not available in library, using raw value)
     // param1: 0 = stop spraying, 1 = start spraying
@@ -33,6 +36,14 @@ object GridMissionConverter {
         fcuSystemId: UByte = 0u,
         fcuComponentId: UByte = 0u
     ): List<MissionItemInt> {
+        Log.i(TAG, "Converting ${gridResult.waypoints.size} waypoints, ${gridResult.numLines} lines to mission items")
+        Log.d(TAG, "Home: ${homePosition.latitude}, ${homePosition.longitude}")
+
+        // Log first few waypoints for debugging
+        gridResult.waypoints.take(6).forEachIndexed { idx, wp ->
+            Log.d(TAG, "Input WP[$idx]: lineIndex=${wp.lineIndex}, isStart=${wp.isLineStart}, isEnd=${wp.isLineEnd}")
+        }
+
         val missionItems = mutableListOf<MissionItemInt>()
 
         // CRITICAL FIX: Sequence 0 = HOME position (NAV_WAYPOINT with current=1, z=0f)
@@ -80,19 +91,48 @@ object GridMissionConverter {
 
         // Add CONDITION_YAW command right after takeoff if holdNosePosition is enabled
         // This sets the yaw and maintains it throughout the mission
+        // ArduPilot MAV_CMD_CONDITION_YAW (115):
+        //   param1: Target angle (degrees 0-360)
+        //   param2: Angular speed (deg/s, 0 = default)
+        //   param3: Direction (-1=CCW, 0=shortest, 1=CW)
+        //   param4: 0=absolute angle, 1=relative offset
+        // IMPORTANT: For ArduPilot Copter, yaw commands need MavFrame.MISSION frame
         if (holdNosePosition) {
+            // First, clear any ROI that might override yaw control
+            // MAV_CMD_DO_SET_ROI_NONE (197) clears the ROI so yaw is controlled by mission
             missionItems.add(
                 MissionItemInt(
                     targetSystem = fcuSystemId,
                     targetComponent = fcuComponentId,
                     seq = sequenceNumber.toUShort(),
                     frame = MavEnumValue.of(MavFrame.MISSION),
+                    command = MavEnumValue.of(MavCmd.DO_SET_ROI_NONE),
+                    current = 0u,
+                    autocontinue = 1u,
+                    param1 = 0f, // Unused
+                    param2 = 0f, // Unused
+                    param3 = 0f, // Unused
+                    param4 = 0f, // Unused
+                    x = 0,
+                    y = 0,
+                    z = 0f
+                )
+            )
+            sequenceNumber++
+
+            // Set the yaw angle to hold throughout the mission
+            missionItems.add(
+                MissionItemInt(
+                    targetSystem = fcuSystemId,
+                    targetComponent = fcuComponentId,
+                    seq = sequenceNumber.toUShort(),
+                    frame = MavEnumValue.of(MavFrame.MISSION), // Use MISSION frame for non-nav commands
                     command = MavEnumValue.of(MavCmd.CONDITION_YAW),
                     current = 0u,
                     autocontinue = 1u,
                     param1 = initialYaw, // Target yaw angle in degrees (0-360)
-                    param2 = 0f, // Yaw speed (0 = maximum)
-                    param3 = 1f, // Direction: 1 = clockwise, -1 = counter-clockwise
+                    param2 = 30f, // Yaw speed deg/s (use reasonable speed instead of default)
+                    param3 = 0f, // Direction: 0 = shortest path to target
                     param4 = 0f, // 0 = absolute angle, 1 = relative angle
                     x = 0,
                     y = 0,
@@ -108,56 +148,14 @@ object GridMissionConverter {
         // Convert grid waypoints to mission items (starting from seq=2 or seq=3 if holdNosePosition)
         gridResult.waypoints.forEach { waypoint ->
             val currentLineIndex = waypoint.lineIndex
-
-            // Check if we're starting a new survey line - add sprayer commands
-            if (autoSpray && currentLineIndex != lastLineIndex) {
-                // If we were on a previous line, STOP spraying first (at end of previous line)
-                if (lastLineIndex >= 0) {
-                    missionItems.add(
-                        MissionItemInt(
-                            targetSystem = fcuSystemId,
-                            targetComponent = fcuComponentId,
-                            seq = sequenceNumber.toUShort(),
-                            frame = MavEnumValue.of(MavFrame.MISSION),
-                            command = MavEnumValue.fromValue(MAV_CMD_DO_SPRAYER),  // MAV_CMD_DO_SPRAYER = 216
-                            current = 0u,
-                            autocontinue = 1u,
-                            param1 = 0f,  // 0 = STOP spraying
-                            param2 = 0f,
-                            param3 = 0f,
-                            param4 = 0f,
-                            x = 0,
-                            y = 0,
-                            z = 0f
-                        )
-                    )
-                    sequenceNumber++
-                }
-
-                // START spraying at beginning of new line
-                missionItems.add(
-                    MissionItemInt(
-                        targetSystem = fcuSystemId,
-                        targetComponent = fcuComponentId,
-                        seq = sequenceNumber.toUShort(),
-                        frame = MavEnumValue.of(MavFrame.MISSION),
-                        command = MavEnumValue.fromValue(MAV_CMD_DO_SPRAYER),  // MAV_CMD_DO_SPRAYER = 216
-                        current = 0u,
-                        autocontinue = 1u,
-                        param1 = 1f,  // 1 = START spraying
-                        param2 = 0f,
-                        param3 = 0f,
-                        param4 = 0f,
-                        x = 0,
-                        y = 0,
-                        z = 0f
-                    )
-                )
-                sequenceNumber++
-            }
+            val isNewLine = currentLineIndex != lastLineIndex
 
             // For the first waypoint after takeoff, add speed command BEFORE the waypoint
-            // This ensures we have NAV_WAYPOINT -> DO_CHANGE_SPEED -> NAV_WAYPOINT sequence
+            // ArduPilot MAV_CMD_DO_CHANGE_SPEED (178):
+            //   param1: Speed type (0=Airspeed, 1=Ground Speed, 2=Climb, 3=Descent)
+            //   param2: Speed in m/s (-1 = no change)
+            //   param3: Throttle % (-1 = no change)
+            //   param4: 0=absolute, 1=relative
             if (isFirstWaypoint && waypoint.speed != null) {
                 missionItems.add(
                     MissionItemInt(
@@ -168,10 +166,10 @@ object GridMissionConverter {
                         command = MavEnumValue.of(MavCmd.DO_CHANGE_SPEED),
                         current = 0u,
                         autocontinue = 1u,
-                        param1 = 0f, // Speed type: 0 = Airspeed, 1 = Ground Speed
-                        param2 = waypoint.speed,
+                        param1 = 1f, // Speed type: 1 = Ground Speed (for copter)
+                        param2 = waypoint.speed, // Target speed in m/s
                         param3 = -1f, // Throttle (-1 = no change)
-                        param4 = 0f,
+                        param4 = 0f, // 0 = absolute speed
                         x = 0,
                         y = 0,
                         z = 0f
@@ -181,8 +179,7 @@ object GridMissionConverter {
                 isFirstWaypoint = false
             }
             // Add speed change command at start of each NEW line (but not the first waypoint)
-            // This ensures we have NAV_WAYPOINT -> DO_CHANGE_SPEED -> NAV_WAYPOINT sequence
-            else if (!isFirstWaypoint && waypoint.isLineStart && waypoint.speed != null && waypoint.lineIndex != lastLineIndex) {
+            else if (!isFirstWaypoint && waypoint.isLineStart && waypoint.speed != null && isNewLine) {
                 missionItems.add(
                     MissionItemInt(
                         targetSystem = fcuSystemId,
@@ -192,10 +189,10 @@ object GridMissionConverter {
                         command = MavEnumValue.of(MavCmd.DO_CHANGE_SPEED),
                         current = 0u,
                         autocontinue = 1u,
-                        param1 = 0f, // Speed type: 0 = Airspeed, 1 = Ground Speed
-                        param2 = waypoint.speed,
+                        param1 = 1f, // Speed type: 1 = Ground Speed (for copter)
+                        param2 = waypoint.speed, // Target speed in m/s
                         param3 = -1f, // Throttle (-1 = no change)
-                        param4 = 0f,
+                        param4 = 0f, // 0 = absolute speed
                         x = 0,
                         y = 0,
                         z = 0f
@@ -204,13 +201,15 @@ object GridMissionConverter {
                 sequenceNumber++
             }
 
-            // Update lastLineIndex after processing sprayer/speed commands but before adding waypoint
-            lastLineIndex = currentLineIndex
-
             // Add the actual waypoint
-            // When holdNosePosition is true, set param4 to NaN to prevent yaw changes at each waypoint
-            // This locks the yaw to the initial heading set by CONDITION_YAW after takeoff
-            val waypointYaw = if (holdNosePosition) Float.NaN else 0f
+            // ArduPilot MAV_CMD_NAV_WAYPOINT (16):
+            //   param1: Hold time in seconds (0 = no hold, proceed immediately)
+            //   param2: Acceptance radius in meters (vehicle considers WP reached when within this radius)
+            //   param3: Pass radius (0 = pass through WP, >0 = pass by WP at this radius)
+            //   param4: Desired yaw angle at WP (NaN = no yaw change, use current heading)
+            // When holdNosePosition is true, use the initial yaw value to maintain nose position
+            // Using actual yaw value instead of NaN for more reliable behavior across ArduPilot versions
+            val waypointYaw = if (holdNosePosition) initialYaw else 0f
 
             missionItems.add(
                 MissionItemInt(
@@ -221,10 +220,10 @@ object GridMissionConverter {
                     command = MavEnumValue.of(MavCmd.NAV_WAYPOINT),
                     current = 0u,
                     autocontinue = 1u,
-                    param1 = 0f, // Hold time (0 = no hold)
-                    param2 = 3f, // Acceptance radius in meters (2-5m recommended)
-                    param3 = 0f, // Pass radius (0 = pass through waypoint)
-                    param4 = waypointYaw, // NaN = don't change yaw (lock nose), 0 = face next waypoint
+                    param1 = 0f, // Hold time (0 = no hold, proceed immediately)
+                    param2 = 3f, // Acceptance radius in meters (2-5m recommended for copter)
+                    param3 = 0f, // Pass radius (0 = fly through waypoint)
+                    param4 = waypointYaw, // Yaw angle (NaN = maintain current, 0 = north)
                     x = (waypoint.position.latitude * 1E7).toInt(),
                     y = (waypoint.position.longitude * 1E7).toInt(),
                     z = waypoint.altitude
@@ -232,26 +231,83 @@ object GridMissionConverter {
             )
             sequenceNumber++
 
+            // Add sprayer commands AFTER reaching waypoint position
+            // ArduPilot MAV_CMD_DO_SPRAYER (216) - ArduPilot specific:
+            //   param1: 0 = disable/stop spraying, 1 = enable/start spraying
+            //   param2-7: Unused (ignored)
+            // This ensures spraying happens during the survey line, not while traveling to it
+            if (autoSpray) {
+                // If this is the START of a new line, add START spray command AFTER this waypoint
+                if (waypoint.isLineStart && isNewLine) {
+                    missionItems.add(
+                        MissionItemInt(
+                            targetSystem = fcuSystemId,
+                            targetComponent = fcuComponentId,
+                            seq = sequenceNumber.toUShort(),
+                            frame = MavEnumValue.of(MavFrame.GLOBAL_RELATIVE_ALT_INT),
+                            command = MavEnumValue.fromValue(MAV_CMD_DO_SPRAYER),  // MAV_CMD_DO_SPRAYER = 216
+                            current = 0u,
+                            autocontinue = 1u,
+                            param1 = 1f,  // 1 = Enable/START spraying
+                            param2 = 0f,  // Unused
+                            param3 = 0f,  // Unused
+                            param4 = 0f,  // Unused
+                            x = 0,
+                            y = 0,
+                            z = 0f
+                        )
+                    )
+                    sequenceNumber++
+                }
+                // If this is the END of a line, add STOP spray command AFTER this waypoint
+                else if (waypoint.isLineEnd) {
+                    missionItems.add(
+                        MissionItemInt(
+                            targetSystem = fcuSystemId,
+                            targetComponent = fcuComponentId,
+                            seq = sequenceNumber.toUShort(),
+                            frame = MavEnumValue.of(MavFrame.GLOBAL_RELATIVE_ALT_INT),
+                            command = MavEnumValue.fromValue(MAV_CMD_DO_SPRAYER),  // MAV_CMD_DO_SPRAYER = 216
+                            current = 0u,
+                            autocontinue = 1u,
+                            param1 = 0f,  // 0 = Disable/STOP spraying
+                            param2 = 0f,  // Unused
+                            param3 = 0f,  // Unused
+                            param4 = 0f,  // Unused
+                            x = 0,
+                            y = 0,
+                            z = 0f
+                        )
+                    )
+                    sequenceNumber++
+                }
+            }
+
+            // Update lastLineIndex after processing this waypoint
+            lastLineIndex = currentLineIndex
+
             if (isFirstWaypoint) {
                 isFirstWaypoint = false
             }
         }
 
-        // STOP spraying before RTL
+        // Final safety STOP spraying before RTL (in case last line end wasn't processed)
+        // ArduPilot MAV_CMD_DO_SPRAYER (216): param1=0 to disable spraying
+        // This ensures sprayer is definitely off before returning home
         if (autoSpray) {
             missionItems.add(
                 MissionItemInt(
                     targetSystem = fcuSystemId,
                     targetComponent = fcuComponentId,
                     seq = sequenceNumber.toUShort(),
-                    frame = MavEnumValue.of(MavFrame.MISSION),
+                    frame = MavEnumValue.of(MavFrame.GLOBAL_RELATIVE_ALT_INT),
                     command = MavEnumValue.fromValue(MAV_CMD_DO_SPRAYER),  // MAV_CMD_DO_SPRAYER = 216
                     current = 0u,
                     autocontinue = 1u,
-                    param1 = 0f,  // 0 = STOP spraying
-                    param2 = 0f,
-                    param3 = 0f,
-                    param4 = 0f,
+                    param1 = 0f,  // 0 = Disable/STOP spraying
+                    param2 = 0f,  // Unused
+                    param3 = 0f,  // Unused
+                    param4 = 0f,  // Unused
                     x = 0,
                     y = 0,
                     z = 0f
@@ -261,6 +317,8 @@ object GridMissionConverter {
         }
 
         // Add RTL (Return to Launch) at the end
+        // ArduPilot MAV_CMD_NAV_RETURN_TO_LAUNCH (20):
+        //   All params unused - vehicle will return to launch location at RTL_ALT
         missionItems.add(
             MissionItemInt(
                 targetSystem = fcuSystemId,
@@ -270,15 +328,17 @@ object GridMissionConverter {
                 command = MavEnumValue.of(MavCmd.NAV_RETURN_TO_LAUNCH),
                 current = 0u,
                 autocontinue = 1u,
-                param1 = 0f,
-                param2 = 0f,
-                param3 = 0f,
-                param4 = 0f,
+                param1 = 0f,  // Unused
+                param2 = 0f,  // Unused
+                param3 = 0f,  // Unused
+                param4 = 0f,  // Unused
                 x = 0,
                 y = 0,
                 z = 0f
             )
         )
+
+        Log.i(TAG, "✓ Mission built: ${missionItems.size} total items (from ${gridResult.waypoints.size} waypoints)")
 
         return missionItems
     }
@@ -287,12 +347,14 @@ object GridMissionConverter {
      * Convert single waypoint to mission item
      * @param waypoint Grid waypoint to convert
      * @param sequence Mission sequence number
-     * @param holdNosePosition If true, sets param4 to NaN to prevent yaw changes
+     * @param holdNosePosition If true, sets param4 to the initial yaw to maintain nose position
+     * @param initialYaw The yaw angle to use when holdNosePosition is true
      */
     private fun waypointToMissionItem(
         waypoint: GridWaypoint,
         sequence: Int,
-        holdNosePosition: Boolean = false
+        holdNosePosition: Boolean = false,
+        initialYaw: Float = 0f
     ): MissionItemInt {
         return MissionItemInt(
             targetSystem = 0u,
@@ -305,7 +367,7 @@ object GridMissionConverter {
             param1 = 0f, // Hold time (0 = no hold)
             param2 = 3f, // Acceptance radius in meters (2-5m recommended)
             param3 = 0f, // Pass radius (0 = pass through waypoint)
-            param4 = if (holdNosePosition) Float.NaN else 0f, // NaN = don't change yaw
+            param4 = if (holdNosePosition) initialYaw else 0f, // Use initialYaw to maintain nose position
             x = (waypoint.position.latitude * 1E7).toInt(),
             y = (waypoint.position.longitude * 1E7).toInt(),
             z = waypoint.altitude
@@ -329,7 +391,7 @@ object GridMissionConverter {
     /**
      * Calculate total mission items count
      * @param gridResult Grid survey result
-     * @param holdNosePosition If true, includes YAW command in count
+     * @param holdNosePosition If true, includes DO_SET_ROI_NONE + CONDITION_YAW commands in count
      * @param autoSpray If true, includes DO_SPRAYER commands in count
      */
     fun calculateMissionItemCount(
@@ -339,9 +401,9 @@ object GridMissionConverter {
     ): Int {
         var count = 2 // Home + Takeoff
 
-        // Add CONDITION_YAW command if holdNosePosition is enabled
+        // Add DO_SET_ROI_NONE + CONDITION_YAW commands if holdNosePosition is enabled
         if (holdNosePosition) {
-            count += 1
+            count += 2 // DO_SET_ROI_NONE + CONDITION_YAW
         }
 
         count += gridResult.waypoints.size // Survey waypoints
@@ -351,14 +413,15 @@ object GridMissionConverter {
         count += speedCommands
 
         // Count sprayer commands if autoSpray is enabled
-        // Each line has a START command, and there's a STOP before RTL
-        // Lines after the first also have a STOP at end of previous line
+        // New logic: START spray after each line start waypoint, STOP spray after each line end waypoint
+        // Plus one final safety STOP before RTL
         if (autoSpray) {
-            val uniqueLines = gridResult.waypoints.map { it.lineIndex }.distinct().size
-            // START for each line + (STOP for each line except first) + final STOP before RTL
-            // = uniqueLines (START commands) + (uniqueLines - 1) (STOP between lines) + 1 (final STOP)
-            // = 2 * uniqueLines
-            count += 2 * uniqueLines
+            // Count line starts (START commands)
+            val lineStartCount = gridResult.waypoints.count { it.isLineStart }
+            // Count line ends (STOP commands)
+            val lineEndCount = gridResult.waypoints.count { it.isLineEnd }
+            // Add final safety STOP before RTL
+            count += lineStartCount + lineEndCount + 1
         }
 
         count += 1 // RTL

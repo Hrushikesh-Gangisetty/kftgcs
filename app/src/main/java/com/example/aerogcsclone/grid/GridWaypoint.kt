@@ -21,9 +21,12 @@ data class GridSurveyParams(
     val lineSpacing: Float = 30f,     // meters
     val gridAngle: Float = 0f,        // degrees from north
     val speed: Float = 10f,           // m/s
-    val altitude: Float = 60f,        // meters
+    val altitude: Float = 10f,        // meters
     val includeSpeedCommands: Boolean = true,
-    val holdNosePosition: Boolean = false  // Hold yaw throughout mission for battery efficiency
+    val holdNosePosition: Boolean = false,  // Hold yaw throughout mission for battery efficiency
+    val indentation: Float = 0f,      // meters - padding from polygon boundary (safe zone)
+    val obstacles: List<List<LatLng>> = emptyList(),  // List of obstacle polygons
+    val obstacleBoundary: Float = 2f  // meters - buffer distance from obstacles (1-5m)
 )
 
 /**

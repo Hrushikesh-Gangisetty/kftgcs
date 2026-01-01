@@ -8,6 +8,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -15,15 +16,14 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 
 /**
- * Dialog for choosing between loading existing template or creating new mission
+ * Initial dialog for selecting mission type: Grid or Waypoint
  * Uses horizontal layout to avoid scrolling
  */
 @Composable
-fun MissionChoiceDialog(
+fun MissionTypeSelectionDialog(
     onDismiss: () -> Unit,
-    onLoadExisting: () -> Unit,
-    onCreateNew: () -> Unit,
-    hasTemplates: Boolean = true
+    onSelectGrid: () -> Unit,
+    onSelectWaypoint: () -> Unit
 ) {
     Dialog(
         onDismissRequest = onDismiss,
@@ -57,7 +57,7 @@ fun MissionChoiceDialog(
                 Spacer(modifier = Modifier.height(12.dp))
 
                 Text(
-                    text = "Mission Planning",
+                    text = "Select Mission Type",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center
@@ -70,43 +70,45 @@ fun MissionChoiceDialog(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Load Existing Template Button
-                    if (hasTemplates) {
-                        Button(
-                            onClick = onLoadExisting,
-                            modifier = Modifier
-                                .width(130.dp)
-                                .height(80.dp),
-                            contentPadding = PaddingValues(12.dp),
-                            shape = RoundedCornerShape(12.dp)
+                    // Grid Mission Button
+                    Button(
+                        onClick = onSelectGrid,
+                        modifier = Modifier
+                            .width(140.dp)
+                            .height(80.dp),
+                        contentPadding = PaddingValues(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary
+                        ),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.FolderOpen,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(24.dp)
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = "Load",
-                                    fontWeight = FontWeight.Bold,
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
-                                Text(
-                                    text = "Template",
-                                    style = MaterialTheme.typography.labelSmall
-                                )
-                            }
+                            Icon(
+                                imageVector = Icons.Default.GridOn,
+                                contentDescription = null,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Grid",
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Text(
+                                text = "Auto survey",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.White.copy(alpha = 0.8f)
+                            )
                         }
                     }
 
-                    // Create New Mission Button
+                    // Waypoint Mission Button
                     OutlinedButton(
-                        onClick = onCreateNew,
+                        onClick = onSelectWaypoint,
                         modifier = Modifier
-                            .width(130.dp)
+                            .width(140.dp)
                             .height(80.dp),
                         contentPadding = PaddingValues(12.dp),
                         shape = RoundedCornerShape(12.dp)
@@ -115,18 +117,18 @@ fun MissionChoiceDialog(
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Add,
+                                imageVector = Icons.Default.Place,
                                 contentDescription = null,
                                 modifier = Modifier.size(24.dp)
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "Create",
+                                text = "Waypoint",
                                 fontWeight = FontWeight.Bold,
                                 style = MaterialTheme.typography.bodyMedium
                             )
                             Text(
-                                text = "New",
+                                text = "Manual",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -134,35 +136,17 @@ fun MissionChoiceDialog(
                     }
                 }
 
-                if (!hasTemplates) {
-                    Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
-                    Card(
-                        modifier = Modifier.wrapContentWidth(),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant
-                        )
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Info,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "No templates saved yet",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
+                // Cancel button
+                TextButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.align(Alignment.CenterHorizontally)
+                ) {
+                    Text("Cancel")
                 }
             }
         }
     }
 }
+

@@ -234,4 +234,215 @@ object GeofenceUtils {
         return (a.latitude - o.latitude) * (b.longitude - o.longitude) -
                (a.longitude - o.longitude) * (b.latitude - o.latitude)
     }
+
+    /**
+     * Calculate the Haversine distance between two points in meters
+     * This is the most accurate distance calculation for geographic coordinates
+     */
+    fun haversineDistance(p1: LatLng, p2: LatLng): Double {
+        val earthRadius = 6371000.0 // meters
+        val lat1Rad = p1.latitude * PI / 180
+        val lat2Rad = p2.latitude * PI / 180
+        val deltaLat = (p2.latitude - p1.latitude) * PI / 180
+        val deltaLon = (p2.longitude - p1.longitude) * PI / 180
+
+        val a = sin(deltaLat / 2) * sin(deltaLat / 2) +
+                cos(lat1Rad) * cos(lat2Rad) *
+                sin(deltaLon / 2) * sin(deltaLon / 2)
+        val c = 2 * atan2(sqrt(a), sqrt(1 - a))
+
+        return earthRadius * c
+    }
+
+    /**
+     * Calculate bearing from point p1 to point p2 in degrees (0-360)
+     * Matches Mission Planner's GetBearing function
+     */
+    private fun getBearing(p1: LatLng, p2: LatLng): Double {
+        val lat1Rad = p1.latitude * PI / 180
+        val lat2Rad = p2.latitude * PI / 180
+        val deltaLon = (p2.longitude - p1.longitude) * PI / 180
+
+        val y = sin(deltaLon) * cos(lat2Rad)
+        val x = cos(lat1Rad) * sin(lat2Rad) - sin(lat1Rad) * cos(lat2Rad) * cos(deltaLon)
+
+        var bearing = atan2(y, x) * 180 / PI
+        if (bearing < 0) bearing += 360
+        return bearing
+    }
+
+    /**
+     * Calculate the minimum distance from a point to the nearest edge of a polygon (in meters)
+     * Uses Mission Planner's cross-track distance formula for accurate perpendicular distance calculation.
+     *
+     * Algorithm based on Mission Planner:
+     * 1. For each fence segment (line from point A to point B):
+     *    - Calculate the distance from lineStart to lineEnd (lineDist)
+     *    - Calculate the distance from lineStart to drone location (distToLocation)
+     *    - Calculate the bearing from lineStart to drone (bearToLocation)
+     *    - Calculate the bearing from lineStart to lineEnd (lineBear)
+     *    - Calculate the angle difference
+     *    - Calculate alongLine = cos(angle) * distToLocation (projection along line)
+     *    - If alongLine is within the segment bounds:
+     *      - Cross-track distance = sin(angle) * distToLocation
+     * 2. Also check distance to each vertex (corner distance check)
+     * 3. Return the minimum of all distances
+     */
+    fun distanceToPolygonEdge(point: LatLng, polygon: List<LatLng>): Double {
+        if (polygon.size < 2) return Double.MAX_VALUE
+
+        var minDistance = Double.MAX_VALUE
+        val n = polygon.size
+
+        // Step 1: Cross-Track Distance Calculation for each fence segment
+        // This calculates the perpendicular distance from the drone to each segment
+        for (i in 0 until n) {
+            val lineStart = polygon[i]
+            val lineEnd = polygon[(i + 1) % n]
+
+            // Calculate distances and bearings (Mission Planner style)
+            val lineDist = haversineDistance(lineStart, lineEnd)
+            val distToLocation = haversineDistance(lineStart, point)
+            val bearToLocation = getBearing(lineStart, point)
+            val lineBear = getBearing(lineStart, lineEnd)
+
+            // Calculate angle difference (normalize to 0-360)
+            var angle = bearToLocation - lineBear
+            if (angle < 0) angle += 360
+
+            // Convert angle to radians for trig functions
+            val angleRad = angle * PI / 180
+
+            // Calculate projection along the line
+            val alongLine = cos(angleRad) * distToLocation
+
+            // Check if perpendicular projection falls within the line segment
+            if (alongLine >= 0 && alongLine <= lineDist) {
+                // Cross-track distance calculation
+                val crossTrackDist = abs(sin(angleRad) * distToLocation)
+                if (crossTrackDist < minDistance) {
+                    minDistance = crossTrackDist
+                }
+            }
+        }
+
+        // Step 2: Corner Distance Check - check distance to each vertex
+        // This is important for corners where the perpendicular doesn't hit any segment
+        for (i in 0 until n) {
+            val vertexDist = haversineDistance(point, polygon[i])
+            if (vertexDist < minDistance) {
+                minDistance = vertexDist
+            }
+        }
+
+        return minDistance
+    }
+
+    /**
+     * Check if a point is inside a polygon using ray casting algorithm
+     * This is equivalent to Mission Planner's PolygonTools.isInside function
+     */
+    fun isPointInPolygon(point: LatLng, polygon: List<LatLng>): Boolean {
+        if (polygon.size < 3) return false
+
+        var inside = false
+        var j = polygon.size - 1
+
+        for (i in polygon.indices) {
+            val xi = polygon[i].longitude
+            val yi = polygon[i].latitude
+            val xj = polygon[j].longitude
+            val yj = polygon[j].latitude
+
+            if (((yi > point.latitude) != (yj > point.latitude)) &&
+                (point.longitude < (xj - xi) * (point.latitude - yi) / (yj - yi) + xi)) {
+                inside = !inside
+            }
+            j = i
+        }
+
+        return inside
+    }
+
+    /**
+     * Complete geofence check that matches Mission Planner's behavior:
+     * - Returns 0 if breach (outside inclusion polygon or inside exclusion polygon)
+     * - Returns the distance to the nearest fence edge if inside
+     *
+     * For an INCLUSION polygon (which is what we use):
+     * - If drone is OUTSIDE the polygon = BREACH (return 0)
+     * - If drone is INSIDE, return the distance to the nearest edge
+     */
+    fun checkGeofenceDistance(point: LatLng, polygon: List<LatLng>): Double {
+        if (polygon.size < 3) return Double.MAX_VALUE
+
+        // Check if inside the inclusion polygon
+        val isInside = isPointInPolygon(point, polygon)
+
+        // If outside an INCLUSION polygon = BREACH
+        if (!isInside) {
+            return 0.0
+        }
+
+        // If inside, return the distance to the nearest edge
+        return distanceToPolygonEdge(point, polygon)
+    }
+
+    /**
+     * Scale an existing polygon outward or inward by a specified delta distance.
+     * Positive deltaMeters expands the polygon, negative contracts it.
+     * This preserves the polygon shape while changing its size.
+     *
+     * @param polygon The existing polygon to scale
+     * @param deltaMeters The distance change in meters (positive = expand, negative = contract)
+     * @return Scaled polygon
+     */
+    fun scalePolygon(polygon: List<LatLng>, deltaMeters: Double): List<LatLng> {
+        if (polygon.size < 3) return polygon
+        if (deltaMeters == 0.0) return polygon
+
+        val earthRadius = 6371000.0
+        val scaledPoints = mutableListOf<LatLng>()
+
+        // Calculate centroid
+        val centroid = calculateCentroid(polygon)
+
+        for (i in polygon.indices) {
+            val current = polygon[i]
+
+            // Calculate direction from centroid to current point (outward direction)
+            val toCentroidLat = current.latitude - centroid.latitude
+            val toCentroidLon = current.longitude - centroid.longitude
+            val distToCentroid = sqrt(toCentroidLat * toCentroidLat + toCentroidLon * toCentroidLon)
+
+            if (distToCentroid < 1e-10) {
+                // Point is at centroid, can't determine direction
+                scaledPoints.add(current)
+                continue
+            }
+
+            // Normalize the outward direction
+            val outwardLat = toCentroidLat / distToCentroid
+            val outwardLon = toCentroidLon / distToCentroid
+
+            // Apply delta distance in the outward direction
+            val avgLat = current.latitude
+            val offsetLat = outwardLat * (deltaMeters / earthRadius) * 180 / PI
+            val offsetLon = outwardLon * (deltaMeters / (earthRadius * cos(avgLat * PI / 180))) * 180 / PI
+
+            scaledPoints.add(LatLng(
+                current.latitude + offsetLat,
+                current.longitude + offsetLon
+            ))
+        }
+
+        return scaledPoints
+    }
+
+    /**
+     * Calculate the centroid of a polygon (public version)
+     */
+    fun getCentroid(points: List<LatLng>): LatLng {
+        return calculateCentroid(points)
+    }
 }

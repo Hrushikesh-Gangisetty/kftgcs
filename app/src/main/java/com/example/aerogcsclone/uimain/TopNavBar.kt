@@ -29,7 +29,6 @@ import com.example.aerogcsclone.navigation.Screen
 import com.example.aerogcsclone.telemetry.SharedViewModel
 import android.util.Log
 import com.example.aerogcsclone.utils.AppStrings
-import kotlinx.coroutines.flow.distinctUntilChanged
 
 @Composable
 fun TopNavBar(
@@ -323,6 +322,21 @@ fun TopNavBar(
                             }
                         )
                         DropdownMenuItem(
+                            text = { Text(AppStrings.language) },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.Language,
+                                    contentDescription = AppStrings.language,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            },
+                            onClick = {
+                                kebabMenuExpanded = false
+                                navController.navigate(Screen.LanguageSelection.route)
+                            }
+                        )
+                        DropdownMenuItem(
                             text = { Text(AppStrings.logout) },
                             leadingIcon = {
                                 Icon(
@@ -469,17 +483,64 @@ fun TopNavBar(
 
                         Divider(color = Color.White.copy(alpha = 0.3f))
 
+                        // Spray Rate Slider - Always visible
+                        // PWM mapping: OFF=1000, 10%=1100, 50%=1500, 100%=2000
+                        // Uses DO_SET_SERVO (SERVO7) by default for direct servo control
+                        Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(AppStrings.sprayRate, color = Color.White, modifier = Modifier.weight(1f))
+                                Text("${sprayRate.toInt()} %", color = Color.White, fontWeight = FontWeight.Bold)
+                            }
+                            Slider(
+                                value = sprayRate,
+                                onValueChange = { newRate ->
+                                    // Snap to nearest 10%
+                                    val snappedRate = (Math.round(newRate / 10f) * 10f).coerceIn(10f, 100f)
+                                    telemetryViewModel.setSprayRate(snappedRate)
+                                },
+                                valueRange = 10f..100f, // 10% to 100% (minimum 10%)
+                                steps = 8, // 9 positions: 10%, 20%, 30%, 40%, 50%, 60%, 70%, 80%, 90%, 100%
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = SliderDefaults.colors(
+                                    thumbColor = if (sprayEnabled) Color.Green else Color.Gray,
+                                    activeTrackColor = if (sprayEnabled) Color.Green else Color.Gray,
+                                    inactiveTrackColor = Color.DarkGray
+                                )
+                            )
+                            Text(
+                                AppStrings.adjustSprayIntensity,
+                                color = Color.Gray,
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.padding(top = 2.dp)
+                            )
+                            // PWM info text
+                            Text(
+                                "PWM: ${(1000 + (sprayRate.toInt() / 100f * 1000f)).toInt()}",
+                                color = Color.Gray.copy(alpha = 0.7f),
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.padding(top = 2.dp)
+                            )
+                        }
+
+                        Divider(color = Color.White.copy(alpha = 0.3f))
+
                         // Spray Enable/Disable Toggle
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                AppStrings.enableSpray,
-                                color = Color.White,
-                                modifier = Modifier.weight(1f),
-                                fontWeight = FontWeight.Bold
-                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    AppStrings.enableSpray,
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    if (sprayEnabled) AppStrings.sprayActive else AppStrings.sprayInactive,
+                                    color = if (sprayEnabled) Color.Green else Color.Red,
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
                             Switch(
                                 checked = sprayEnabled,
                                 onCheckedChange = { telemetryViewModel.setSprayEnabled(it) },
@@ -490,51 +551,6 @@ fun TopNavBar(
                                     uncheckedTrackColor = Color.Red // Red when OFF
                                 )
                             )
-                        }
-
-                        // Status text based on spray state
-                        if (sprayEnabled) {
-                            Text(
-                                AppStrings.sprayActive,
-                                color = Color.Green,
-                                style = MaterialTheme.typography.bodySmall,
-                                modifier = Modifier.padding(top = 4.dp)
-                            )
-                        } else {
-                            Text(
-                                AppStrings.sprayInactive,
-                                color = Color.Red,
-                                style = MaterialTheme.typography.bodySmall,
-                                modifier = Modifier.padding(top = 4.dp)
-                            )
-                        }
-
-                        // Spray Rate Slider (only shown when spray is enabled)
-                        if (sprayEnabled) {
-                            Column(modifier = Modifier.padding(vertical = 4.dp)) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(AppStrings.sprayRate, color = Color.White, modifier = Modifier.weight(1f))
-                                    Text("${sprayRate.toInt()} %", color = Color.White, fontWeight = FontWeight.Bold)
-                                }
-                                Slider(
-                                    value = sprayRate,
-                                    onValueChange = { telemetryViewModel.setSprayRate(it) },
-                                    valueRange = 0f..100f, // 0% to 100%
-                                    steps = 100, // 101 steps for 0-100 range
-                                    modifier = Modifier.fillMaxWidth(),
-                                    colors = SliderDefaults.colors(
-                                        thumbColor = Color.Green,
-                                        activeTrackColor = Color.Green,
-                                        inactiveTrackColor = Color.Gray
-                                    )
-                                )
-                                Text(
-                                    AppStrings.adjustSprayIntensity,
-                                    color = Color.Gray,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    modifier = Modifier.padding(top = 2.dp)
-                                )
-                            }
                         }
                     }
                 }

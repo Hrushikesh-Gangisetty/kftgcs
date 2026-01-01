@@ -85,13 +85,16 @@ fun MainPage(
 
     val notifications by telemetryViewModel.notifications.collectAsState()
     val isNotificationPanelVisible by telemetryViewModel.isNotificationPanelVisible.collectAsState()
-    val splitPlanActive by telemetryViewModel.splitPlanActive.collectAsState()
 
     // Collect spray status popup
     val sprayStatusPopup by telemetryViewModel.sprayStatusPopup.collectAsState()
 
-    // Split plan confirmation dialog
-    var showSplitPlanDialog by remember { mutableStateOf(false) }
+    // Collect resume point location for displaying "R" marker on map
+    val resumePointLocation by telemetryViewModel.resumePointLocation.collectAsState()
+
+    // Collect "Set Resume Point Here" popup state
+    val showSetResumePointPopup by telemetryViewModel.showAddResumeHerePopup.collectAsState()
+    val resumePointWaypoint by telemetryViewModel.resumePointWaypoint.collectAsState()
 
     // Resume Mission dialog states
     var showResumeWarningDialog by remember { mutableStateOf(false) }
@@ -162,7 +165,9 @@ fun MainPage(
                     selectedGeofencePointIndex = index
                     Toast.makeText(context, "Geofence point ${index + 1} selected - drag to adjust", Toast.LENGTH_SHORT).show()
                 },
-                geofenceAdjustmentEnabled = geofenceEnabled
+                geofenceAdjustmentEnabled = geofenceEnabled,
+                // Resume point marker - shows "R" where drone paused
+                resumePointLocation = resumePointLocation
             )
 
             StatusPanel(
@@ -194,34 +199,6 @@ fun MainPage(
                 }
             }
 
-            // Pause and Resume buttons on the left side
-            PauseResumeButtons(
-                modifier = Modifier
-                    .align(Alignment.CenterStart)
-                    .padding(12.dp),
-                onPauseMission = {
-                    telemetryViewModel.pauseMission()
-                },
-                onResumeMission = {
-                    android.util.Log.i("MainPage", "=== RESUME CALLBACK TRIGGERED ===")
-
-                    // Log the state values for debugging
-                    android.util.Log.i("MainPage", "pausedAtWaypoint: ${telemetryState.pausedAtWaypoint}")
-                    android.util.Log.i("MainPage", "currentWaypoint: ${telemetryState.currentWaypoint}")
-
-                    // Get the last auto waypoint (current or paused waypoint)
-                    val lastAutoWp = telemetryState.pausedAtWaypoint
-                        ?: telemetryState.currentWaypoint
-                        ?: 1
-
-                    android.util.Log.i("MainPage", "Resolved waypoint: $lastAutoWp")
-                    resumeWaypointNumber = lastAutoWp
-
-                    showResumeWarningDialog = true
-                },
-                currentMode = telemetryState.mode,
-                missionPaused = telemetryState.missionPaused
-            )
 
             FloatingButtons(
                 modifier = Modifier
@@ -248,11 +225,6 @@ fun MainPage(
                         Toast.makeText(context, "No GPS location available", Toast.LENGTH_SHORT).show()
                     }
                 },
-                onSplitPlan = {
-                    // Show split plan confirmation dialog
-                    showSplitPlanDialog = true
-                },
-                splitPlanActive = splitPlanActive,
                 currentMode = telemetryState.mode
             )
 
@@ -276,125 +248,25 @@ fun MainPage(
             // TopNavBar removed - it's already handled in AppNavGraph.kt
         }
 
-        // Mission Complete Popup (must be inside the composable)
-        var lastMissionTime by remember { mutableStateOf<Long?>(null) }
-        var lastMissionDistance by remember { mutableStateOf<Float?>(null) }
-        var lastLitresConsumed by remember { mutableStateOf<Float?>(null) }
-        var prevMissionCompleted by remember { mutableStateOf(false) }
-        var missionJustCompleted by remember { mutableStateOf(false) }
+        // Mission Complete - NO POPUP, notification is sufficient
+        // Track mission completion for logging purposes only
+        var lastHandledCompletionTime by remember { mutableStateOf(0L) }
 
-        LaunchedEffect(telemetryState.missionCompleted, telemetryState.lastMissionElapsedSec, telemetryState.totalDistanceMeters, telemetryState.sprayTelemetry.consumedLiters) {
-            // Check if mission just completed
-            if (telemetryState.missionCompleted && !prevMissionCompleted) {
-                // Capture final values
-                lastMissionTime = telemetryState.lastMissionElapsedSec
-                lastMissionDistance = telemetryState.totalDistanceMeters
-                lastLitresConsumed = telemetryState.sprayTelemetry.consumedLiters
+        LaunchedEffect(telemetryState.missionCompleted, telemetryState.lastMissionElapsedSec) {
+            val currentCompletionTime = telemetryState.lastMissionElapsedSec ?: 0L
+            val isNewCompletion = currentCompletionTime != lastHandledCompletionTime && currentCompletionTime > 0L
 
-                Log.i("MainPage", "✅ Mission completed - Time: ${lastMissionTime}s, Distance: ${lastMissionDistance}m, Litres: ${lastLitresConsumed}L")
+            if (telemetryState.missionCompleted && isNewCompletion) {
+                val missionTime = telemetryState.lastMissionElapsedSec
+                val missionDistance = telemetryState.totalDistanceMeters
+                val litresConsumed = telemetryState.sprayTelemetry.consumedLiters
 
-                // Only show popup if mission actually ran for meaningful duration
-                // Validate that at least one of the following is true:
-                // 1. Mission ran for at least 5 seconds
-                // 2. Distance covered is at least 5 meters
-                val missionTimeValid = (lastMissionTime ?: 0L) >= 5
-                val distanceValid = (lastMissionDistance ?: 0f) >= 5f
-
-                if (missionTimeValid || distanceValid) {
-                    Log.i("MainPage", "✅ Mission data valid - showing completion dialog")
-                    missionJustCompleted = true
-                } else {
-                    Log.w("MainPage", "⚠️ Mission completed but no meaningful data captured - skipping dialog")
-                }
+                Log.i("MainPage", "✅ Mission completed - Time: ${missionTime}s, Distance: ${missionDistance}m, Litres: ${litresConsumed}L")
+                lastHandledCompletionTime = currentCompletionTime
+                // No popup - notification already shown by UnifiedFlightTracker
             }
-
-            prevMissionCompleted = telemetryState.missionCompleted
         }
 
-        if (missionJustCompleted) {
-            AlertDialog(
-                onDismissRequest = {
-                    missionJustCompleted = false
-                    // Reset values after dismissing
-                    lastMissionTime = null
-                    lastMissionDistance = null
-                    lastLitresConsumed = null
-                },
-                confirmButton = {
-                    Button(
-                        onClick = {
-                            missionJustCompleted = false
-                            // Reset values after dismissing
-                            lastMissionTime = null
-                            lastMissionDistance = null
-                            lastLitresConsumed = null
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                    ) {
-                        Text(AppStrings.ok, color = MaterialTheme.colorScheme.onPrimary)
-                    }
-                },
-                title = {
-                    Text(AppStrings.missionCompleted, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                },
-                text = {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        val timeStr = lastMissionTime?.let { sec ->
-                            val h = sec / 3600
-                            val m = (sec % 3600) / 60
-                            val s = sec % 60
-                            if (h > 0) "%02d:%02d:%02d".format(h, m, s) else "%02d:%02d".format(m, s)
-                        } ?: "N/A"
-                        val distStr = lastMissionDistance?.let { dist ->
-                            if (dist < 1000f) "%.1f m".format(dist)
-                            else "%.2f km".format(dist / 1000f)
-                        } ?: "N/A"
-                        val litresStr = lastLitresConsumed?.let { litres ->
-                            "%.2f L".format(litres)
-                        } ?: "N/A"
-
-                        Text("${AppStrings.totalTimeTaken}: $timeStr", style = MaterialTheme.typography.bodyLarge)
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text("${AppStrings.totalDistanceCovered}: $distStr", style = MaterialTheme.typography.bodyLarge)
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text("${AppStrings.liquidConsumed}: $litresStr", style = MaterialTheme.typography.bodyLarge)
-                    }
-                }
-            )
-        }
-
-        // Split Plan Confirmation Dialog
-        if (showSplitPlanDialog) {
-            AlertDialog(
-                onDismissRequest = { showSplitPlanDialog = false },
-                confirmButton = {
-                    Button(
-                        onClick = {
-                            // Confirm split plan
-                            telemetryViewModel.confirmSplitPlan()
-                            showSplitPlanDialog = false
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                    ) {
-                        Text(AppStrings.yes, color = MaterialTheme.colorScheme.onPrimary)
-                    }
-                },
-                dismissButton = {
-                    Button(
-                        onClick = { showSplitPlanDialog = false },
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
-                    ) {
-                        Text(AppStrings.no, color = MaterialTheme.colorScheme.onSecondary)
-                    }
-                },
-                title = {
-                    Text(AppStrings.confirmSplitPlan, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                },
-                text = {
-                    Text(AppStrings.splitPlanMessage, style = MaterialTheme.typography.bodyLarge)
-                }
-            )
-        }
 
         // Resume Mission Warning Dialog (Step 1)
         if (showResumeWarningDialog) {
@@ -561,6 +433,78 @@ fun MainPage(
                 }
             )
         }
+
+        // === SET RESUME POINT POPUP ===
+        // This dialog appears when mode changes from AUTO to LOITER during a mission
+        if (showSetResumePointPopup) {
+            AlertDialog(
+                onDismissRequest = {
+                    telemetryViewModel.cancelSetResumePoint()
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            telemetryViewModel.confirmSetResumePoint()
+                            Toast.makeText(
+                                context,
+                                "Resume point set at waypoint ${resumePointWaypoint ?: "?"}",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50)) // Green
+                    ) {
+                        Text("OK", color = Color.White)
+                    }
+                },
+                dismissButton = {
+                    Button(
+                        onClick = {
+                            telemetryViewModel.cancelSetResumePoint()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+                    ) {
+                        Text(AppStrings.cancel, color = MaterialTheme.colorScheme.onSecondary)
+                    }
+                },
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Default.LocationOn,
+                            contentDescription = "Resume Point",
+                            tint = Color(0xFF4CAF50), // Green
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            "Set Resume Point",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                },
+                text = {
+                    Column {
+                        Text(
+                            "Do you want to set resume point here?",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            "Waypoint: ${resumePointWaypoint ?: "Unknown"}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            "Click OK to mark this location as resume point.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            )
+        }
     }
 }
 
@@ -689,8 +633,6 @@ fun FloatingButtons(
     onToggleMapType: () -> Unit,
     onStartMission: () -> Unit,
     onRefresh: () -> Unit,
-    onSplitPlan: () -> Unit,
-    splitPlanActive: Boolean,
     currentMode: String?
 ) {
     Column(
@@ -724,31 +666,6 @@ fun FloatingButtons(
             }
         }
 
-        // Split Plan Button
-        FloatingActionButton(
-            onClick = { onSplitPlan() },
-            containerColor = if (splitPlanActive) Color(0xFFFF9800).copy(alpha = 0.7f) else Color.Black.copy(alpha = 0.7f),
-            modifier = Modifier.size(width = 70.dp, height = 56.dp)
-        ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                Icon(
-                    Icons.Default.CallSplit,
-                    contentDescription = AppStrings.split,
-                    tint = Color.White,
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = if (splitPlanActive) AppStrings.resumeBtn else AppStrings.split,
-                    color = Color.White,
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.Medium
-                )
-            }
-        }
 
         // Recenter Button
         FloatingActionButton(
@@ -795,92 +712,6 @@ fun FloatingButtons(
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = AppStrings.mapType,
-                    color = Color.White,
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.Medium
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun PauseResumeButtons(
-    modifier: Modifier = Modifier,
-    onPauseMission: () -> Unit,
-    onResumeMission: () -> Unit,
-    currentMode: String?,
-    missionPaused: Boolean = false
-) {
-    // Check if mission is running in AUTO mode
-    val isMissionRunning = currentMode?.contains("Auto", ignoreCase = true) == true
-
-    Column(
-        modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        // Pause Button (only active when mission is running)
-        FloatingActionButton(
-            onClick = {
-                if (isMissionRunning) {
-                    onPauseMission()
-                }
-            },
-            containerColor = Color.Black.copy(alpha = 0.7f),
-            modifier = Modifier.size(width = 70.dp, height = 56.dp)
-        ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                Icon(
-                    Icons.Default.Pause,
-                    contentDescription = AppStrings.pause,
-                    tint = Color.White,
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = AppStrings.pause,
-                    color = Color.White,
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.Medium
-                )
-            }
-        }
-
-        // Resume Button (orange when mission is paused)
-        FloatingActionButton(
-            onClick = {
-                android.util.Log.i("MainPage", "Resume button clicked! missionPaused=$missionPaused")
-                if (missionPaused) {
-                    onResumeMission()
-                } else {
-                    // For testing: allow resume even when not paused
-                    android.util.Log.w("MainPage", "Resume clicked but mission not paused - allowing anyway for testing")
-                    onResumeMission()
-                }
-            },
-            containerColor = if (missionPaused)
-                Color(0xFFFFA500).copy(alpha = 0.7f) // Orange when paused
-            else
-                Color.Black.copy(alpha = 0.7f), // Black when not paused
-            modifier = Modifier.size(width = 70.dp, height = 56.dp)
-        ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                Icon(
-                    Icons.Default.PlayArrow,
-                    contentDescription = AppStrings.resumeBtn,
-                    tint = Color.White,
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = AppStrings.resumeBtn,
                     color = Color.White,
                     fontSize = 9.sp,
                     fontWeight = FontWeight.Medium

@@ -30,6 +30,8 @@ import com.google.android.gms.maps.model.LatLng
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
 import com.example.aerogcsclone.grid.GridUtils
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -73,18 +75,12 @@ class SharedViewModel : ViewModel() {
         // Setup emergency RTL callback for crash handler
         setupEmergencyRTLCallback()
 
-        // Observe mission completion to clear waypoints from the map
-        viewModelScope.launch {
-            var previousMissionCompleted = false
-            _telemetryState.collect { state ->
-                // When mission transitions from not completed to completed
-                if (state.missionCompleted && !previousMissionCompleted) {
-                    Log.i("SharedVM", "Mission completed detected - clearing mission waypoints from map")
-                    clearMissionFromMap()
-                }
-                previousMissionCompleted = state.missionCompleted
-            }
-        }
+        // NOTE: Mission waypoints are NO LONGER automatically cleared when mission completes.
+        // The map lines should remain visible until user explicitly navigates back to
+        // select a new flying mode. clearMissionFromMap() should be called when:
+        // 1. User navigates to SelectFlyingMethodScreen
+        // 2. User explicitly clears the mission
+        // 3. User uploads a new mission
     }
 
     /**
@@ -334,11 +330,32 @@ class SharedViewModel : ViewModel() {
             lastMissionElapsedSec = if (completed) elapsedSeconds else _telemetryState.value.lastMissionElapsedSec
         )
 
-        // Reset mission area and clear mission waypoints when mission completes
+        // NOTE: Mission waypoints are NO LONGER automatically cleared when mission completes.
+        // The map lines should remain visible until user navigates to select a new flying mode.
         if (completed) {
-            Log.i("SharedVM", "Mission completed via updateFlightState - clearing mission")
-            clearMissionFromMap()
+            Log.i("SharedVM", "Mission completed via updateFlightState - keeping map lines visible")
         }
+    }
+
+    /**
+     * Mark the mission completed popup as handled to prevent it from showing again
+     * This should be called after the popup is shown or skipped
+     */
+    fun markMissionCompletedHandled() {
+        _telemetryState.value = _telemetryState.value.copy(missionCompletedHandled = true)
+        Log.i("SharedVM", "Mission completed handled - popup won't show again for this mission")
+    }
+
+    /**
+     * Reset mission completed state - called when starting a new mission
+     */
+    fun resetMissionCompletedState() {
+        _telemetryState.value = _telemetryState.value.copy(
+            missionCompleted = false,
+            missionCompletedHandled = false,
+            lastMissionElapsedSec = null
+        )
+        Log.i("SharedVM", "Mission completed state reset")
     }
 
     // --- Calibration helpers ---
@@ -628,6 +645,9 @@ class SharedViewModel : ViewModel() {
     private val _fenceRadius = MutableStateFlow(5f)
     val fenceRadius: StateFlow<Float> = _fenceRadius.asStateFlow()
 
+    // Track previous fence radius to calculate delta for scaling
+    private var _previousFenceRadius: Float = 5f
+
     private val _geofenceEnabled = MutableStateFlow(false)
     val geofenceEnabled: StateFlow<Boolean> = _geofenceEnabled.asStateFlow()
 
@@ -636,6 +656,7 @@ class SharedViewModel : ViewModel() {
     
     // Store home position for geofence calculation
     private val _homePosition = MutableStateFlow<LatLng?>(null)
+
 
     // Geofence shape: true for square, false for polygon (default square for MainPage)
     private val _useSquareGeofence = MutableStateFlow(true)
@@ -652,6 +673,19 @@ class SharedViewModel : ViewModel() {
 
     private val _sprayRate = MutableStateFlow(100f) // 10% to 100%
     val sprayRate: StateFlow<Float> = _sprayRate.asStateFlow()
+
+    // ========== YAW HOLD STATE (Hold Nose Position feature) ==========
+    // These control continuous yaw enforcement during AUTO mode
+    private val _yawHoldEnabled = MutableStateFlow(false)
+    val yawHoldEnabled: StateFlow<Boolean> = _yawHoldEnabled.asStateFlow()
+
+    private val _lockedYaw = MutableStateFlow<Float?>(null)
+    val lockedYaw: StateFlow<Float?> = _lockedYaw.asStateFlow()
+
+    private var yawEnforcementJob: kotlinx.coroutines.Job? = null
+    private val YAW_TOLERANCE = 5f  // degrees - only send correction if error exceeds this
+    private val YAW_ENFORCEMENT_INTERVAL = 500L  // ms - how often to check/enforce yaw
+    // ================================================================
 
     // --- Notification State ---
     private val _notifications = MutableStateFlow<List<Notification>>(emptyList())
@@ -680,6 +714,407 @@ class SharedViewModel : ViewModel() {
         }
     }
 
+    // ========== ADD RESUME HERE POPUP STATE ==========
+    // Triggered when mode changes from AUTO to LOITER during a mission
+    private val _showAddResumeHerePopup = MutableStateFlow(false)
+    val showAddResumeHerePopup: StateFlow<Boolean> = _showAddResumeHerePopup.asStateFlow()
+
+    // The waypoint number where the mode changed (resume point candidate)
+    private val _resumePointWaypoint = MutableStateFlow<Int?>(null)
+    val resumePointWaypoint: StateFlow<Int?> = _resumePointWaypoint.asStateFlow()
+
+    // The location (LatLng) where the drone paused - for displaying "R" marker on map
+    private val _resumePointLocation = MutableStateFlow<LatLng?>(null)
+    val resumePointLocation: StateFlow<LatLng?> = _resumePointLocation.asStateFlow()
+
+    // Track the previous mode to detect AUTO -> LOITER transition
+    private var previousMode: String? = null
+
+    // Flag to track if we have a stored resume mission ready to execute
+    private val _resumeMissionReady = MutableStateFlow(false)
+    val resumeMissionReady: StateFlow<Boolean> = _resumeMissionReady.asStateFlow()
+
+    /**
+     * Called when mode changes from AUTO to LOITER (detected in TelemetryRepository)
+     * This shows a popup asking user if they want to set resume point here
+     */
+    fun onModeChangedToLoiterFromAuto(waypointNumber: Int) {
+        Log.i("SharedVM", "=== MODE CHANGED: AUTO → LOITER ===")
+        Log.i("SharedVM", "Waypoint at mode change: $waypointNumber")
+
+        _resumePointWaypoint.value = waypointNumber
+
+        // Capture current drone location temporarily (will only be shown if user confirms)
+        val currentLat = _telemetryState.value.latitude
+        val currentLon = _telemetryState.value.longitude
+        if (currentLat != null && currentLon != null) {
+            _pendingResumeLocation = LatLng(currentLat, currentLon)
+            Log.i("SharedVM", "Pending resume point location captured: $currentLat, $currentLon")
+        }
+
+        // Do NOT set resume location yet - wait for user confirmation
+        // _resumePointLocation.value = ...
+
+        // Show popup to ask user if they want to set resume point
+        _showAddResumeHerePopup.value = true
+
+        // Also set the paused state
+        _telemetryState.update {
+            it.copy(
+                missionPaused = true,
+                pausedAtWaypoint = waypointNumber
+            )
+        }
+
+        addNotification(
+            Notification(
+                message = "Mode changed to Loiter at waypoint $waypointNumber",
+                type = NotificationType.INFO
+            )
+        )
+    }
+
+    // Temporary storage for pending resume location (before user confirms)
+    private var _pendingResumeLocation: LatLng? = null
+
+    /**
+     * Called when user confirms "OK" on the resume point popup
+     * This sets the resume location marker and processes the resume mission
+     */
+    fun confirmSetResumePoint() {
+        val waypointNumber = _resumePointWaypoint.value ?: return
+
+        Log.i("SharedVM", "User confirmed resume point at waypoint $waypointNumber")
+
+        // Now set the resume location to show the "R" marker
+        _pendingResumeLocation?.let {
+            _resumePointLocation.value = it
+            Log.i("SharedVM", "Resume point marker set at: ${it.latitude}, ${it.longitude}")
+        }
+
+        // Hide the popup
+        _showAddResumeHerePopup.value = false
+
+        // Process the resume point in background
+        processResumePoint(waypointNumber)
+    }
+
+    /**
+     * Called when user cancels/dismisses the resume point popup
+     * No marker is shown and no processing happens
+     */
+    fun cancelSetResumePoint() {
+        Log.i("SharedVM", "User cancelled resume point")
+
+        // Clear pending location
+        _pendingResumeLocation = null
+        _resumePointWaypoint.value = null
+
+        // Hide the popup
+        _showAddResumeHerePopup.value = false
+
+        // Do NOT show resume marker - user declined
+    }
+
+    /**
+     * Process the resume point - retrieves and uploads modified mission
+     * This runs in the background after user confirms
+     */
+    private fun processResumePoint(waypointNumber: Int) {
+        viewModelScope.launch {
+            Log.i("SharedVM", "═══════════════════════════════════════")
+            Log.i("SharedVM", "=== AUTO PROCESSING RESUME POINT (BACKGROUND) ===")
+            Log.i("SharedVM", "Resume waypoint: $waypointNumber")
+            Log.i("SharedVM", "═══════════════════════════════════════")
+
+            try {
+                // Step 1: Check connection
+                if (!_telemetryState.value.connected) {
+                    Log.e("SharedVM", "Not connected to FC - skipping auto resume processing")
+                    return@launch
+                }
+
+                // Step 2: Get current mission from FC (silent - no progress updates)
+                Log.i("SharedVM", "Retrieving mission from FC (background)...")
+                val allWaypoints = repo?.getAllWaypoints()
+                if (allWaypoints == null || allWaypoints.isEmpty()) {
+                    Log.e("SharedVM", "Failed to retrieve mission from FC")
+                    return@launch
+                }
+
+                Log.i("SharedVM", "Retrieved ${allWaypoints.size} waypoints from FC")
+
+                // Step 3: Filter waypoints from resume point
+                Log.i("SharedVM", "Filtering waypoints from resume point (background)...")
+                val filtered = repo?.filterWaypointsForResume(allWaypoints, waypointNumber)
+                if (filtered == null || filtered.isEmpty()) {
+                    Log.e("SharedVM", "Filtering resulted in empty mission")
+                    return@launch
+                }
+
+                Log.i("SharedVM", "Filtered to ${filtered.size} waypoints")
+
+                // Step 4: Resequence waypoints
+                Log.i("SharedVM", "Resequencing waypoints (background)...")
+                val resequenced = repo?.resequenceWaypoints(filtered)
+                if (resequenced == null || resequenced.isEmpty()) {
+                    Log.e("SharedVM", "Resequencing failed")
+                    return@launch
+                }
+
+                Log.i("SharedVM", "Resequenced to ${resequenced.size} waypoints")
+
+                // Step 5: Validate sequence numbers
+                val sequences = resequenced.map { it.seq.toInt() }
+                val expectedSequences = (0 until resequenced.size).toList()
+                if (sequences != expectedSequences) {
+                    Log.e("SharedVM", "❌ Invalid sequence numbers!")
+                    return@launch
+                }
+                Log.i("SharedVM", "✅ Sequence validation passed")
+
+                // Step 6: Upload modified mission to FC (silent)
+                Log.i("SharedVM", "Uploading modified mission to FC (background)...")
+                val uploadSuccess = repo?.uploadMissionWithAck(resequenced) ?: false
+                if (!uploadSuccess) {
+                    Log.e("SharedVM", "❌ Mission upload failed")
+                    return@launch
+                }
+
+                Log.i("SharedVM", "✅ Modified mission uploaded to FC")
+
+                delay(500)
+
+                // Step 7: Set current waypoint to 1
+                val setWpResult = repo?.setCurrentWaypoint(1) ?: false
+                if (setWpResult) {
+                    Log.i("SharedVM", "✅ Current waypoint set to 1")
+                } else {
+                    Log.w("SharedVM", "⚠️ Failed to set current waypoint, continuing anyway")
+                }
+
+                // Mark that resume mission is ready
+                _resumeMissionReady.value = true
+                _missionUploaded.value = true
+                lastUploadedCount = resequenced.size
+
+                Log.i("SharedVM", "═══════════════════════════════════════")
+                Log.i("SharedVM", "✅ Resume mission ready (background processing complete)")
+                Log.i("SharedVM", "═══════════════════════════════════════")
+
+            } catch (e: Exception) {
+                Log.e("SharedVM", "Failed to auto-process resume point", e)
+            }
+        }
+    }
+
+    /**
+     * Called when user confirms "Add Resume Here" in the popup
+     * This stores the resume point and prepares the mission for resume
+     */
+    fun confirmAddResumeHere(onProgress: (String) -> Unit = {}, onResult: (Boolean, String?) -> Unit = { _, _ -> }) {
+        viewModelScope.launch {
+            val resumeWaypoint = _resumePointWaypoint.value ?: run {
+                Log.e("SharedVM", "No resume waypoint stored!")
+                onResult(false, "No resume waypoint stored")
+                return@launch
+            }
+
+            Log.i("SharedVM", "═══════════════════════════════════════")
+            Log.i("SharedVM", "=== CONFIRM ADD RESUME HERE ===")
+            Log.i("SharedVM", "Resume waypoint: $resumeWaypoint")
+            Log.i("SharedVM", "═══════════════════════════════════════")
+
+            _showAddResumeHerePopup.value = false
+
+            try {
+                // Step 1: Check connection
+                onProgress("Checking connection...")
+                if (!_telemetryState.value.connected) {
+                    Log.e("SharedVM", "Not connected to FC")
+                    onResult(false, "Not connected to flight controller")
+                    return@launch
+                }
+
+                onProgress("Retrieving mission from FC...")
+
+                // Step 2: Get current mission from FC
+                val allWaypoints = repo?.getAllWaypoints()
+                if (allWaypoints == null || allWaypoints.isEmpty()) {
+                    Log.e("SharedVM", "Failed to retrieve mission from FC")
+                    onResult(false, "Failed to retrieve mission from flight controller")
+                    return@launch
+                }
+
+                Log.i("SharedVM", "Retrieved ${allWaypoints.size} waypoints from FC")
+
+                // Log original mission
+                Log.i("SharedVM", "--- Original Mission ---")
+                allWaypoints.forEach { wp ->
+                    val cmdName = wp.command.entry?.name ?: "CMD_${wp.command.value}"
+                    Log.i("SharedVM", "  seq=${wp.seq}: $cmdName frame=${wp.frame.value} current=${wp.current}")
+                }
+
+                onProgress("Filtering waypoints from resume point...")
+
+                // Step 3: Filter waypoints from resume point
+                val filtered = repo?.filterWaypointsForResume(allWaypoints, resumeWaypoint)
+                if (filtered == null || filtered.isEmpty()) {
+                    Log.e("SharedVM", "Filtering resulted in empty mission")
+                    onResult(false, "No waypoints after resume point")
+                    return@launch
+                }
+
+                Log.i("SharedVM", "Filtered to ${filtered.size} waypoints")
+
+                onProgress("Resequencing waypoints...")
+
+                // Step 4: Resequence waypoints
+                val resequenced = repo?.resequenceWaypoints(filtered)
+                if (resequenced == null || resequenced.isEmpty()) {
+                    Log.e("SharedVM", "Resequencing failed")
+                    onResult(false, "Failed to resequence waypoints")
+                    return@launch
+                }
+
+                Log.i("SharedVM", "Resequenced to ${resequenced.size} waypoints")
+
+                // Log final mission structure
+                Log.i("SharedVM", "--- Final Resume Mission ---")
+                resequenced.forEach { wp ->
+                    val cmdName = wp.command.entry?.name ?: "CMD_${wp.command.value}"
+                    Log.i("SharedVM", "  seq=${wp.seq}: $cmdName frame=${wp.frame.value} alt=${wp.z}m target=${wp.targetSystem}:${wp.targetComponent}")
+                }
+
+                // Step 5: Validate sequence numbers (skip TAKEOFF validation for resume)
+                onProgress("Validating mission...")
+                val sequences = resequenced.map { it.seq.toInt() }
+                val expectedSequences = (0 until resequenced.size).toList()
+                if (sequences != expectedSequences) {
+                    Log.e("SharedVM", "❌ Invalid sequence numbers!")
+                    Log.e("SharedVM", "Expected: $expectedSequences, Got: $sequences")
+                    onResult(false, "Invalid mission sequence")
+                    return@launch
+                }
+                Log.i("SharedVM", "✅ Sequence validation passed")
+
+                onProgress("Uploading modified mission to FC...")
+
+                // Step 6: Upload modified mission to FC
+                val uploadSuccess = repo?.uploadMissionWithAck(resequenced) ?: false
+                if (!uploadSuccess) {
+                    Log.e("SharedVM", "❌ Mission upload failed")
+                    onResult(false, "Failed to upload mission to FC")
+                    return@launch
+                }
+
+                Log.i("SharedVM", "✅ Modified mission uploaded to FC")
+
+                delay(500)
+
+                onProgress("Setting start waypoint...")
+
+                // Step 7: Set current waypoint to 1 (first item after HOME in resequenced mission)
+                val setWpResult = repo?.setCurrentWaypoint(1) ?: false
+                if (setWpResult) {
+                    Log.i("SharedVM", "✅ Current waypoint set to 1")
+                } else {
+                    Log.w("SharedVM", "⚠️ Failed to set current waypoint, continuing anyway")
+                }
+
+                // Mark that resume mission is ready
+                _resumeMissionReady.value = true
+                _missionUploaded.value = true
+                lastUploadedCount = resequenced.size
+
+                Log.i("SharedVM", "═══════════════════════════════════════")
+                Log.i("SharedVM", "✅ Resume mission ready - waiting for AUTO mode")
+                Log.i("SharedVM", "═══════════════════════════════════════")
+
+                addNotification(
+                    Notification(
+                        message = "Resume point set at waypoint $resumeWaypoint - Switch to AUTO to resume",
+                        type = NotificationType.SUCCESS
+                    )
+                )
+
+                onResult(true, null)
+
+            } catch (e: Exception) {
+                Log.e("SharedVM", "Failed to prepare resume mission", e)
+                onResult(false, e.message)
+            }
+        }
+    }
+
+    /**
+     * Called when user dismisses the "Add Resume Here" popup without confirming
+     */
+    fun dismissAddResumeHerePopup() {
+        _showAddResumeHerePopup.value = false
+        _resumePointWaypoint.value = null
+        Log.i("SharedVM", "Add Resume Here popup dismissed")
+    }
+
+    /**
+     * Called when mode changes to AUTO and we have a resume mission ready
+     * This starts the mission from the resume point
+     */
+    fun onModeChangedToAuto() {
+        if (_resumeMissionReady.value) {
+            Log.i("SharedVM", "=== MODE CHANGED TO AUTO - STARTING RESUME MISSION ===")
+
+            viewModelScope.launch {
+                // Small delay to ensure FC is ready
+                delay(300)
+
+                // Send mission start command
+                val startSuccess = repo?.startMission() ?: false
+
+                if (startSuccess) {
+                    Log.i("SharedVM", "✅ Resume mission started successfully")
+                    _resumeMissionReady.value = false
+                    // Clear the resume point location (remove "R" marker from map)
+                    _resumePointLocation.value = null
+                    _resumePointWaypoint.value = null
+                    _telemetryState.update {
+                        it.copy(
+                            missionPaused = false,
+                            pausedAtWaypoint = null
+                        )
+                    }
+                    addNotification(
+                        Notification(
+                            message = "Mission resumed from stored point",
+                            type = NotificationType.SUCCESS
+                        )
+                    )
+                    ttsManager?.announceMissionResumed()
+                } else {
+                    Log.e("SharedVM", "Failed to start resume mission")
+                    addNotification(
+                        Notification(
+                            message = "Failed to start resume mission",
+                            type = NotificationType.ERROR
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Update the previous mode tracking (called from TelemetryRepository)
+     */
+    fun updatePreviousMode(mode: String?) {
+        previousMode = mode
+    }
+
+    /**
+     * Get the previous mode for transition detection
+     */
+    fun getPreviousMode(): String? = previousMode
+
     fun setSurveyPolygon(polygon: List<LatLng>) {
         _surveyPolygon.value = polygon
         updateGeofencePolygon()
@@ -701,13 +1136,37 @@ class SharedViewModel : ViewModel() {
 
     fun setFenceRadius(radius: Float) {
         // Ensure minimum 5m radius
-        _fenceRadius.value = radius.coerceAtLeast(5f)
-        updateGeofencePolygon()
+        val newRadius = radius.coerceAtLeast(5f)
+        val oldRadius = _fenceRadius.value
+
+        // Calculate the delta (change in buffer distance)
+        val deltaMeters = (newRadius - oldRadius).toDouble()
+
+        _fenceRadius.value = newRadius
+
+        // If geofence is enabled and we have an existing polygon, scale it
+        if (_geofenceEnabled.value && _geofencePolygon.value.size >= 3 && deltaMeters != 0.0) {
+            // Scale the existing polygon by the delta
+            val scaledPolygon = GeofenceUtils.scalePolygon(_geofencePolygon.value, deltaMeters)
+            if (scaledPolygon.size >= 3) {
+                _geofencePolygon.value = scaledPolygon
+                Log.i("Geofence", "Geofence polygon scaled by ${deltaMeters}m (new buffer: ${newRadius}m)")
+            }
+        } else {
+            // No existing polygon, generate a new one
+            updateGeofencePolygon()
+        }
+
+        // Update the previous radius tracker
+        _previousFenceRadius = newRadius
     }
 
     fun setGeofenceEnabled(enabled: Boolean) {
         _geofenceEnabled.value = enabled
         if (enabled) {
+            // Reset geofence state for fresh monitoring
+            resetGeofenceState()
+
             // Capture current drone position as home position if not set
             val droneLat = _telemetryState.value.latitude
             val droneLon = _telemetryState.value.longitude
@@ -716,8 +1175,17 @@ class SharedViewModel : ViewModel() {
                 Log.i("Geofence", "Home position captured: $droneLat, $droneLon")
             }
             updateGeofencePolygon()
+
+            Log.i("Geofence", "✓ Geofence ENABLED - monitoring active")
+            addNotification(
+                Notification(
+                    message = "Geofence enabled - monitoring active",
+                    type = NotificationType.INFO
+                )
+            )
         } else {
             _geofencePolygon.value = emptyList()
+            Log.i("Geofence", "Geofence DISABLED")
         }
     }
 
@@ -800,34 +1268,12 @@ class SharedViewModel : ViewModel() {
         
         // Check if all points are inside the polygon with a small tolerance
         for (point in points) {
-            if (!isPointInPolygon(point, polygon)) {
+            if (!GeofenceUtils.isPointInPolygon(point, polygon)) {
                 Log.w("SharedVM", "Point not in geofence: $point")
                 return false
             }
         }
         return true
-    }
-
-    private fun isPointInPolygon(point: LatLng, polygon: List<LatLng>): Boolean {
-        if (polygon.size < 3) return true // No valid polygon
-
-        var inside = false
-        var j = polygon.size - 1
-
-        for (i in polygon.indices) {
-            val xi = polygon[i].longitude
-            val yi = polygon[i].latitude
-            val xj = polygon[j].longitude
-            val yj = polygon[j].latitude
-
-            if (((yi > point.latitude) != (yj > point.latitude)) &&
-                (point.longitude < (xj - xi) * (point.latitude - yi) / (yj - yi) + xi)) {
-                inside = !inside
-            }
-            j = i
-        }
-
-        return inside
     }
 
     // --- MAVLink Actions ---
@@ -1128,7 +1574,7 @@ class SharedViewModel : ViewModel() {
 
     fun startMission(onResult: (Boolean, String?) -> Unit = { _, _ -> }) {
         viewModelScope.launch {
-            _telemetryState.value = _telemetryState.value.copy(missionCompleted = false, missionElapsedSec = null)
+            _telemetryState.value = _telemetryState.value.copy(missionCompleted = false, missionCompletedHandled = false, missionElapsedSec = null)
             try {
                 Log.i("SharedVM", "Starting mission start sequence...")
 
@@ -1232,6 +1678,13 @@ class SharedViewModel : ViewModel() {
                 val result = repo?.startMission() ?: false
                 if (result) {
                     Log.i("SharedVM", "✓ Mission start acknowledged by FCU")
+
+                    // Start yaw enforcement if yaw hold is enabled
+                    if (_yawHoldEnabled.value && _lockedYaw.value != null) {
+                        Log.i("SharedVM", "🧭 Starting yaw enforcement for locked yaw: ${_lockedYaw.value}°")
+                        startYawEnforcement()
+                    }
+
                     onResult(true, null)
                 } else {
                     Log.e("SharedVM", "Mission start failed or not acknowledged")
@@ -1281,22 +1734,15 @@ class SharedViewModel : ViewModel() {
                 Log.i("DEBUG_PAUSE", "Pausing - lastAutoWp: $lastAutoWp, currentWp: $currentWp, storing: $waypointToStore")
 
                 // Switch to LOITER to hold position
+                // NOTE: The mode change will be detected by TelemetryRepository which will
+                // trigger onModeChangedToLoiterFromAuto() to show the "Add Resume Here" popup
                 val result = repo?.changeMode(MavMode.LOITER) ?: false
 
                 if (result) {
-                    _telemetryState.update { 
-                        it.copy(
-                            missionPaused = true,
-                            pausedAtWaypoint = waypointToStore
-                        ) 
-                    }
-                    Log.i("SharedVM", "Mission paused successfully. pausedAtWaypoint set to: ${_telemetryState.value.pausedAtWaypoint}")
-                    addNotification(
-                        Notification(
-                            message = "Mission paused at waypoint ${waypointToStore ?: "?"} - holding position",
-                            type = NotificationType.INFO
-                        )
-                    )
+                    // Don't set missionPaused here - let the mode change detection handle it
+                    // The popup will be shown by onModeChangedToLoiterFromAuto()
+                    Log.i("SharedVM", "LOITER mode change command sent. Waiting for mode change detection...")
+
                     // Announce via TTS
                     ttsManager?.announceMissionPaused(waypointToStore ?: 0)
                     onResult(true, null)
@@ -1599,43 +2045,258 @@ class SharedViewModel : ViewModel() {
         Log.i("LevelSensorCal", "Calibration updated successfully")
     }
 
+    // Spray control configuration
+    // ArduPilot Sprayer library integration:
+    // - SERVO9_FUNCTION = 22 (SprayerPump) - ArduPilot's Sprayer library controls the pump
+    // - Uses MAV_CMD_DO_SPRAYER (216) to enable/disable spraying
+    // - Uses SPRAY_RATE parameter (0-100%) to control pump duty cycle
+    // - PWM range is controlled by SERVO9_MIN (1050) and SERVO9_MAX (1950) on the FC
+    private val MAV_CMD_DO_SPRAYER = 216u
+
     /**
-     * Control spray system by setting RC7 channel override
-     * @param enable true to enable spray (RC7 = 2000 PWM), false to disable (RC7 = 1000 PWM)
+     * Control spray system using ArduPilot's Sprayer library.
+     *
+     * Since SERVO9_FUNCTION = 22 (SprayerPump), the ArduPilot Sprayer library owns the servo output.
+     * Direct DO_SET_SERVO commands won't work because the library overrides them.
+     *
+     * This implementation uses:
+     * 1. SPRAY_RATE parameter (0-100%) - Controls the maximum pump duty cycle
+     * 2. MAV_CMD_DO_SPRAYER (216) - Enables/disables the sprayer
+     *
+     * The Sprayer library then calculates actual PWM output based on:
+     * - SPRAY_RATE: The maximum pump rate percentage
+     * - Ground speed (when SPRAY_SPEED_MIN > 0)
+     * - Target coverage rate
+     *
+     * Hardware notes (Hobbywing 5L Pump):
+     * - PWM 1050 µs = minimum throttle (0%)
+     * - PWM 1950 µs = maximum throttle (100% = 5 L/min)
+     * - Linear interpolation between min and max
+     *
+     * @param enable true to enable spray at current rate, false to disable
      */
     fun controlSpray(enable: Boolean) {
         viewModelScope.launch {
-            val pwmValue = if (enable) {
-                // Map spray rate (10-100%) to PWM range (1000-2000)
-                val rate = _sprayRate.value
-                1000 + ((rate / 100f) * 1000f).toInt()
-            } else {
-                1000
-            }
-            Log.i("SprayControl", "Setting spray system to ${if (enable) "ENABLED" else "DISABLED"} (RC7 = $pwmValue PWM, Rate: ${_sprayRate.value}%)")
+            val rate = _sprayRate.value.coerceIn(10f, 100f)
 
-            // Use MAV_CMD_DO_SET_SERVO to control RC7 (servo output 7)
-            repo?.sendCommand(
-                MavCmd.DO_SET_SERVO,
-                param1 = 7f,  // Servo number (RC7)
-                param2 = pwmValue.toFloat()  // PWM value
-            )
+            Log.i("SprayControl", "═══════════════════════════════════════")
+            Log.i("SprayControl", "🚿 SPRAY COMMAND (Sprayer Library Mode)")
+            Log.i("SprayControl", "   State: ${if (enable) "ON" else "OFF"}")
+            Log.i("SprayControl", "   SPRAY_RATE: ${rate.toInt()}%")
+            Log.i("SprayControl", "   Method: MAV_CMD_DO_SPRAYER + SPRAY_RATE param")
+            Log.i("SprayControl", "═══════════════════════════════════════")
+
+            repo?.let { repository ->
+                try {
+                    // Step 1: Set the SPRAY_RATE parameter to control duty cycle
+                    // This parameter controls the maximum pump output (0-100%)
+                    val paramResult = setParameter("SPRAY_RATE", rate)
+                    if (paramResult != null) {
+                        Log.i("SprayControl", "✓ SPRAY_RATE set to ${rate.toInt()}%")
+                    } else {
+                        Log.w("SprayControl", "⚠ SPRAY_RATE set (no confirmation received)")
+                    }
+
+                    // Step 2: Send DO_SPRAYER command to enable/disable
+                    // MAV_CMD_DO_SPRAYER (216): param1 = 1 (enable) or 0 (disable)
+                    repository.sendCommandRaw(
+                        commandId = MAV_CMD_DO_SPRAYER,
+                        param1 = if (enable) 1f else 0f
+                    )
+                    Log.i("SprayControl", "✓ DO_SPRAYER command sent: ${if (enable) "ENABLE" else "DISABLE"}")
+                    Log.i("SprayControl", "✓ Command sent successfully")
+                } catch (e: Exception) {
+                    Log.e("SprayControl", "✗ Failed to send spray command: ${e.message}", e)
+                }
+            } ?: run {
+                Log.e("SprayControl", "✗ Cannot control spray - not connected to drone")
+            }
         }
     }
 
     fun setSprayEnabled(enabled: Boolean) {
         _sprayEnabled.value = enabled
         controlSpray(enabled)
-        Log.i("SprayControl", "Spray ${if (enabled) "ENABLED" else "DISABLED"} at rate: ${_sprayRate.value}%")
+        Log.i("SprayControl", "Spray ${if (enabled) "ENABLED" else "DISABLED"} at rate: ${_sprayRate.value.toInt()}%")
+
+        // Show notification
+        addNotification(
+            Notification(
+                message = if (enabled) "Spray enabled at ${_sprayRate.value.toInt()}%" else "Spray disabled",
+                type = if (enabled) NotificationType.SUCCESS else NotificationType.INFO
+            )
+        )
     }
 
-    fun setSprayRate(rate: Float) {
-        _sprayRate.value = rate.coerceIn(10f, 100f)
-        Log.i("SprayControl", "Spray rate set to: ${_sprayRate.value}%")
+    /**
+     * Disable spray when mode changes from Auto to another mode
+     * This ensures spray is turned off when pilot takes manual control or mission is paused/aborted.
+     * Always sends DO_SPRAYER(0) to FC regardless of app state, because mission-embedded
+     * DO_SPRAYER commands may have turned sprayer on without updating app state.
+     */
+    fun disableSprayOnModeChange() {
+        Log.i("SprayControl", "🚿 Disabling spray due to mode change from Auto")
+
+        // Always send DO_SPRAYER(0) to FC to ensure sprayer is OFF
+        // This is critical because mission-embedded DO_SPRAYER commands work independently of app state
+        viewModelScope.launch {
+            repo?.let { repository ->
+                try {
+                    repository.sendCommandRaw(
+                        commandId = MAV_CMD_DO_SPRAYER,
+                        param1 = 0f  // 0 = Disable sprayer
+                    )
+                    Log.i("SprayControl", "✓ DO_SPRAYER(0) sent to FC - sprayer disabled")
+                } catch (e: Exception) {
+                    Log.e("SprayControl", "✗ Failed to send DO_SPRAYER disable: ${e.message}", e)
+                }
+            }
+        }
+
+        // Also update app state if it was enabled
         if (_sprayEnabled.value) {
-            controlSpray(true)
+            _sprayEnabled.value = false
+            addNotification(Notification("Spray disabled - Mode changed from Auto", NotificationType.INFO))
+            showSprayStatusPopup("Spray Disabled (Mode Change)")
         }
     }
+
+    // Debounce job for spray rate changes
+    private var sprayRateDebounceJob: kotlinx.coroutines.Job? = null
+    private val SPRAY_RATE_DEBOUNCE_MS = 150L // 150ms debounce for smoother slider interaction
+
+    fun setSprayRate(rate: Float) {
+        val newRate = rate.coerceIn(10f, 100f)
+        _sprayRate.value = newRate
+
+        // Debounce the actual command send to avoid flooding FC when slider moves rapidly
+        sprayRateDebounceJob?.cancel()
+        sprayRateDebounceJob = viewModelScope.launch {
+            delay(SPRAY_RATE_DEBOUNCE_MS)
+            if (_sprayEnabled.value) {
+                Log.i("SprayControl", "🚿 Rate changed to ${newRate.toInt()}% - updating SPRAY_RATE parameter")
+                controlSpray(true) // Re-send with new rate
+            } else {
+                Log.d("SprayControl", "Rate set to ${newRate.toInt()}% (spray disabled, SPRAY_RATE will be set when enabled)")
+            }
+        }
+    }
+
+    // ========== YAW HOLD FUNCTIONS (Hold Nose Position feature) ==========
+
+    /**
+     * Enable yaw hold and capture current yaw as the locked target.
+     * Call this when starting AUTO mission with "Hold Nose Position" enabled.
+     */
+    fun enableYawHold() {
+        val currentYaw = _telemetryState.value.heading
+        if (currentYaw != null) {
+            // Normalize yaw to 0-360
+            val normalizedYaw = if (currentYaw < 0) currentYaw + 360 else currentYaw
+            _lockedYaw.value = normalizedYaw
+            _yawHoldEnabled.value = true
+            Log.i("YawHold", "🧭 Yaw hold ENABLED - locked to ${normalizedYaw}°")
+            addNotification(Notification("Yaw locked at ${normalizedYaw.toInt()}°", NotificationType.INFO))
+        } else {
+            Log.w("YawHold", "⚠️ Cannot enable yaw hold - no heading data available")
+        }
+    }
+
+    /**
+     * Disable yaw hold and stop continuous enforcement.
+     * Call this when exiting AUTO mode or completing mission.
+     */
+    fun disableYawHold() {
+        if (_yawHoldEnabled.value) {
+            _yawHoldEnabled.value = false
+            _lockedYaw.value = null
+            yawEnforcementJob?.cancel()
+            yawEnforcementJob = null
+            Log.i("YawHold", "🧭 Yaw hold DISABLED")
+        }
+    }
+
+    /**
+     * Start continuous yaw enforcement loop.
+     * This should be called when entering AUTO mode with yaw hold enabled.
+     */
+    fun startYawEnforcement() {
+        if (!_yawHoldEnabled.value || _lockedYaw.value == null) {
+            Log.w("YawHold", "Cannot start yaw enforcement - yaw hold not enabled or no locked yaw")
+            return
+        }
+
+        // Cancel any existing enforcement job
+        yawEnforcementJob?.cancel()
+
+        yawEnforcementJob = viewModelScope.launch {
+            Log.i("YawHold", "🔄 Starting continuous yaw enforcement at ${_lockedYaw.value}°")
+
+            while (currentCoroutineContext().isActive && _yawHoldEnabled.value) {
+                val currentMode = _telemetryState.value.mode
+                val targetYaw = _lockedYaw.value ?: break
+
+                // Only enforce yaw in AUTO mode
+                if (currentMode?.equals("Auto", ignoreCase = true) == true) {
+                    val currentYaw = _telemetryState.value.heading ?: continue
+
+                    // Calculate yaw error (handle wrap-around)
+                    var yawError = targetYaw - currentYaw
+                    if (yawError > 180) yawError -= 360
+                    if (yawError < -180) yawError += 360
+
+                    // Only send correction if error exceeds tolerance
+                    if (kotlin.math.abs(yawError) > YAW_TOLERANCE) {
+                        Log.d("YawHold", "📐 Yaw error: ${yawError}° - sending correction to ${targetYaw}°")
+                        sendYawCommand(targetYaw)
+                    }
+                } else {
+                    // Not in AUTO mode - stop enforcement
+                    Log.i("YawHold", "Mode is $currentMode (not AUTO) - stopping yaw enforcement")
+                    break
+                }
+
+                delay(YAW_ENFORCEMENT_INTERVAL)
+            }
+
+            Log.i("YawHold", "🛑 Yaw enforcement loop ended")
+        }
+    }
+
+    /**
+     * Send a yaw command to the drone using MAV_CMD_CONDITION_YAW.
+     * This tells the drone to rotate to the specified absolute yaw angle.
+     */
+    private suspend fun sendYawCommand(targetYaw: Float) {
+        try {
+            repo?.sendCommand(
+                MavCmd.CONDITION_YAW,
+                param1 = targetYaw,  // Target yaw angle (degrees, 0-360)
+                param2 = 30f,        // Yaw speed deg/s
+                param3 = 0f,         // Direction: 0 = shortest path
+                param4 = 0f          // 0 = absolute angle
+            )
+        } catch (e: Exception) {
+            Log.e("YawHold", "Failed to send yaw command: ${e.message}")
+        }
+    }
+
+    /**
+     * Set WP_YAW_BEHAVIOR parameter on the autopilot.
+     * 0 = Never change yaw (what we want for hold nose position)
+     * 1 = Face next waypoint (default)
+     * 2 = Face direction of travel
+     */
+    suspend fun setWpYawBehavior(value: Int) {
+        try {
+            setParameter("WP_YAW_BEHAVIOR", value.toFloat())
+            Log.i("YawHold", "✓ WP_YAW_BEHAVIOR set to $value")
+        } catch (e: Exception) {
+            Log.e("YawHold", "Failed to set WP_YAW_BEHAVIOR: ${e.message}")
+        }
+    }
+
+    // =================================================================
     /**
      * Update flow sensor calibration factor (BATT2_AMP_PERVLT parameter)
      * This will be sent to the autopilot to update the flow sensor calibration
@@ -1971,20 +2632,74 @@ class SharedViewModel : ViewModel() {
     }
 
     // --- Geofence Violation Detection ---
+    // Geofence constants - Similar to ArduPilot's FENCE_MARGIN behavior
+    companion object {
+        // Minimum buffer distance - triggers even when stationary
+        // This is the absolute minimum distance from fence before triggering
+        // Set to 2m so drone starts braking at 2-3m and stops near the outer fence (4m)
+        private const val MIN_BUFFER_METERS = 3.5  // Start braking at 2m from inner fence
+
+        // Maximum buffer distance - caps the dynamic buffer at high speeds
+        private const val MAX_BUFFER_METERS = 9.0  // Maximum 12m buffer for high speed scenarios
+
+        // Maximum deceleration capability (m/s²) - conservative estimate for multicopters
+        // Using 3.0 for safe braking estimate (drones can do 3-5, but wind/load affects this)
+        private const val MAX_DECEL_M_S2 = 5.5  // Conservative deceleration
+
+        // System latency in seconds (GPS + telemetry + command execution)
+        // GPS: ~200ms, Telemetry: ~100ms, Command: ~200ms = ~500ms total
+        private const val SYSTEM_LATENCY_SECONDS = 0.5  // 500ms total latency
+
+        // Safety margin multiplier for stopping distance (accounts for uncertainties)
+        private const val STOPPING_DISTANCE_SAFETY_FACTOR = 1.3  // 30% safety margin
+
+        // ULTRA High frequency monitoring interval - 10ms = 100 checks per second
+        private const val GEOFENCE_MONITOR_INTERVAL_MS = 5L
+
+        // Continuous command sending interval when breached - VERY AGGRESSIVE
+        private const val BRAKE_COMMAND_INTERVAL_MS = 50L
+
+        // Number of consecutive commands to send on first breach
+        private const val EMERGENCY_COMMAND_BURST_COUNT = 5
+    }
+
     private val _geofenceViolationDetected = MutableStateFlow(false)
     val geofenceViolationDetected: StateFlow<Boolean> = _geofenceViolationDetected.asStateFlow()
 
-    private var lastGeofenceCheck = 0L
-    private val geofenceCheckInterval = 1000L // Check every 1 second
+    // Pre-emptive warning state - triggered when approaching fence
+    private val _geofenceWarningTriggered = MutableStateFlow(false)
+    val geofenceWarningTriggered: StateFlow<Boolean> = _geofenceWarningTriggered.asStateFlow()
+
+    // Track if brake/RTL has been triggered - prevents multiple first commands
+    @Volatile
+    private var geofenceActionTaken = false
+
+    // Track if RTL process has started - stops continuous BRAKE commands from interfering
+    @Volatile
+    private var rtlInitiated = false
+
+    // Track if geofence is currently triggering a mode change (BRAKE/RTL)
+    // Used to prevent resume popup from showing when geofence falls back to LOITER
+    @Volatile
+    private var geofenceTriggeringModeChange = false
+
+    // Expose geofence triggering state for TelemetryRepository
+    val isGeofenceTriggeringModeChange: Boolean
+        get() = geofenceTriggeringModeChange
+
+    // Track continuous brake sending
+    @Volatile
+    private var lastBrakeCommandTime = 0L
+
+    // For periodic logging only
+    private var lastLogTime = 0L
+
+    // Background geofence monitoring job - runs independently at high frequency
+    private var geofenceMonitorJob: kotlinx.coroutines.Job? = null
 
     init {
-        // Monitor drone position and check geofence violations
-        viewModelScope.launch {
-            telemetryState.collect { state ->
-                checkGeofenceViolation(state)
-                // Do NOT update geofence polygon on every position change - it should stay stationary
-            }
-        }
+        // Start the ULTRA HIGH-FREQUENCY background geofence monitor
+        startGeofenceMonitor()
 
         // Monitor connection status and announce via TTS
         viewModelScope.launch {
@@ -1995,82 +2710,358 @@ class SharedViewModel : ViewModel() {
         }
     }
 
-    private fun checkGeofenceViolation(state: TelemetryState) {
-        val currentTime = System.currentTimeMillis()
-        if (currentTime - lastGeofenceCheck < geofenceCheckInterval) return
-        lastGeofenceCheck = currentTime
+    /**
+     * Start ULTRA high-frequency background geofence monitoring.
+     * Runs in a SEPARATE coroutine at 100Hz (every 10ms) - does NOT wait for telemetry state updates.
+     * Directly reads the latest telemetry values for instant response.
+     * CRITICAL: This monitor MUST NEVER stop while app is running!
+     */
+    private fun startGeofenceMonitor() {
+        geofenceMonitorJob?.cancel()
+        geofenceMonitorJob = viewModelScope.launch {
+            Log.i("Geofence", "🔄🔄🔄 ULTRA HIGH-FREQUENCY GEOFENCE MONITOR STARTED (${1000/GEOFENCE_MONITOR_INTERVAL_MS}Hz) 🔄🔄🔄")
+            Log.i("Geofence", "🔒 Dynamic buffer: ${MIN_BUFFER_METERS}m (stationary) to ${MAX_BUFFER_METERS}m (max speed)")
+            Log.i("Geofence", "📐 Using Mission Planner cross-track distance formula")
 
-        if (!_geofenceEnabled.value || _geofencePolygon.value.isEmpty()) return
+            while (isActive) {
+                try {
+                    // Check geofence using LATEST telemetry data directly
+                    checkGeofenceNow()
+                } catch (e: Exception) {
+                    Log.e("Geofence", "Monitor error (continuing): ${e.message}")
+                    // DON'T break - keep monitoring even if there's an error!
+                }
 
-        val droneLat = state.latitude
-        val droneLon = state.longitude
+                // High frequency polling - 10ms interval (100 times per second)
+                delay(GEOFENCE_MONITOR_INTERVAL_MS)
+            }
 
-        if (droneLat == null || droneLon == null) return
+            Log.w("Geofence", "⚠️ Geofence monitor stopped - this should not happen!")
+        }
+    }
+
+    /**
+     * Calculate dynamic buffer distance based on current speed.
+     * Uses physics-based stopping distance calculation with latency compensation:
+     *
+     * Total buffer = MIN_BUFFER + latency_distance + stopping_distance
+     *
+     * Where:
+     * - latency_distance = speed × system_latency (distance traveled during latency)
+     * - stopping_distance = v² / (2 × deceleration) × safety_factor
+     *
+     * This ensures the drone triggers brake EARLY ENOUGH to stop before the fence,
+     * accounting for GPS, telemetry, and command execution delays.
+     * With 3m min buffer, drone will stop near the outer fence (2m offset).
+     *
+     * Examples at different speeds:
+     * - 0 m/s:  3m (minimum buffer only - stops at outer fence)
+     * - 3 m/s:  3 + 1.5 + 1.95 = 6.45m
+     * - 5 m/s:  3 + 2.5 + 5.42 = 10.92m
+     * - 8 m/s:  3 + 4.0 + 13.87 = capped at 12m
+     */
+    private fun calculateDynamicBuffer(currentSpeedMs: Float, altitudeMeters: Float = 0f): Double {
+        if (currentSpeedMs <= 0) {
+            return MIN_BUFFER_METERS
+        }
+
+        // 1. Distance traveled during system latency (GPS + telemetry + command delay)
+        // At 3 m/s with 500ms latency = 1.5m traveled before braking even starts
+        val latencyDistance = currentSpeedMs * SYSTEM_LATENCY_SECONDS
+
+        // 2. Physics-based stopping distance: v² / (2a)
+        // At 3 m/s with 3.0 m/s² decel = 9/6 = 1.5m
+        val stoppingDistance = (currentSpeedMs * currentSpeedMs) / (2 * MAX_DECEL_M_S2)
+
+        // 3. Apply safety factor to stopping distance only (latency is already worst-case)
+        val safeStoppingDistance = stoppingDistance * STOPPING_DISTANCE_SAFETY_FACTOR
+
+        // Total buffer = minimum + latency distance + safe stopping distance
+        val totalBuffer = MIN_BUFFER_METERS + latencyDistance + safeStoppingDistance
+
+        // Cap at maximum buffer
+        return minOf(MAX_BUFFER_METERS, totalBuffer)
+    }
+
+    /**
+     * ULTRA HIGH-FREQUENCY geofence check - runs every 10ms in background.
+     * Reads LATEST telemetry values directly, does not wait for state updates.
+     *
+     * LOGIC based on Mission Planner / ArduPilot:
+     * - Uses cross-track distance formula for accurate perpendicular distance to fence edges
+     * - Also checks corner distances (important when perpendicular doesn't hit any segment)
+     * - Dynamic buffer based on current speed to ensure drone can stop in time
+     * - Returns 0 if outside fence (BREACH), otherwise returns distance to nearest edge
+     * - Triggers BRAKE + RTL if BREACH or within dynamic buffer distance
+     */
+    private fun checkGeofenceNow() {
+        // Skip if geofence not enabled
+        if (!_geofenceEnabled.value) return
+
+        val polygon = _geofencePolygon.value
+        if (polygon.size < 3) return
+
+        // Get LATEST position directly from telemetry state (not waiting for collect)
+        val currentState = _telemetryState.value
+        val droneLat = currentState.latitude ?: return
+        val droneLon = currentState.longitude ?: return
+
+        // Skip if drone is not armed (no need to enforce geofence when disarmed)
+        if (!currentState.armed) return
 
         val dronePosition = LatLng(droneLat, droneLon)
-        val isInsideGeofence = isPointInPolygon(dronePosition, _geofencePolygon.value)
+        val currentSpeed = currentState.groundspeed ?: 0f
+        val currentAltitude = currentState.altitudeRelative ?: 0f
 
-        if (!isInsideGeofence && !_geofenceViolationDetected.value) {
-            // Geofence violation detected!
-            _geofenceViolationDetected.value = true
-            Log.w("Geofence", "GEOFENCE VIOLATION DETECTED! Switching to RTL mode")
+        // Use Mission Planner's checkGeofenceDistance - returns 0 if BREACH (outside fence)
+        // Otherwise returns the cross-track distance to nearest fence edge
+        val distanceToFence = GeofenceUtils.checkGeofenceDistance(dronePosition, polygon)
+        val isInsideFence = distanceToFence > 0  // If distance is 0, drone is OUTSIDE fence (BREACH)
 
-            // Add notification
-            addNotification(
-                Notification(
-                    message = "GEOFENCE VIOLATION: Drone crossed boundary! Switching to RTL mode",
-                    type = NotificationType.WARNING
-                )
-            )
+        // Calculate dynamic buffer based on speed AND altitude (ArduPilot FENCE_MARGIN behavior)
+        val dynamicBuffer = calculateDynamicBuffer(currentSpeed, currentAltitude)
 
-            // Automatically switch to RTL mode
-            switchToRTL()
-        } else if (isInsideGeofence && _geofenceViolationDetected.value) {
-            // Drone returned to safe zone
+        // Log every 500ms for debugging
+        val now = System.currentTimeMillis()
+        if (now - lastLogTime > 500) {
+            lastLogTime = now
+            Log.d("Geofence", "📍 MONITOR: inside=$isInsideFence, dist=${String.format("%.1f", distanceToFence)}m, dynamicBuffer=${String.format("%.1f", dynamicBuffer)}m, speed=${String.format("%.1f", currentSpeed)}m/s, alt=${String.format("%.1f", currentAltitude)}m, actionTaken=$geofenceActionTaken")
+        }
+
+        // ═══ MISSION PLANNER / ARDUPILOT STYLE FENCE LOGIC ═══
+        // BREACH if: distance is 0 (outside fence) OR within dynamic buffer distance
+        val isOutsideFence = distanceToFence == 0.0
+        val isWithinBuffer = distanceToFence > 0 && distanceToFence <= dynamicBuffer
+        val shouldTriggerAction = isOutsideFence || isWithinBuffer
+
+        if (shouldTriggerAction) {
+            // Log IMMEDIATELY when trigger condition is met
+            if (isOutsideFence) {
+                Log.e("Geofence", "🔴 HARD BREACH! OUTSIDE FENCE! dist=${String.format("%.1f", distanceToFence)}m")
+            } else {
+                Log.e("Geofence", "🔴 BUFFER BREACH! dist=${String.format("%.1f", distanceToFence)}m (within ${String.format("%.1f", dynamicBuffer)}m buffer at ${String.format("%.1f", currentSpeed)}m/s)")
+            }
+
+            _geofenceWarningTriggered.value = true
+
+            if (isOutsideFence) {
+                _geofenceViolationDetected.value = true
+            }
+
+            // FIRST TIME: Send BRAKE then RTL
+            if (!geofenceActionTaken) {
+                geofenceActionTaken = true
+                rtlInitiated = false // Will be set to true once RTL process starts
+                lastBrakeCommandTime = now
+
+                if (isOutsideFence) {
+                    Log.e("Geofence", "🚨🚨🚨 BREACH DETECTED! Outside fence - EMERGENCY BRAKE + RTL! 🚨🚨🚨")
+                    Log.e("Geofence", "Position: $droneLat, $droneLon")
+                } else {
+                    Log.w("Geofence", "⚠️⚠️⚠️ TOO CLOSE TO FENCE! Distance: ${String.format("%.1f", distanceToFence)}m (buffer: ${String.format("%.1f", dynamicBuffer)}m) - EMERGENCY STOP!")
+                }
+
+                // Send BRAKE then RTL - this will set rtlInitiated = true
+                sendEmergencyBrakeAndRTLBurst()
+            }
+
+            // CONTINUOUS ENFORCEMENT: Only send BRAKE if RTL hasn't been initiated yet
+            // Once RTL process starts, we don't want to interfere with it
+            if (!rtlInitiated && now - lastBrakeCommandTime > BRAKE_COMMAND_INTERVAL_MS) {
+                lastBrakeCommandTime = now
+                sendBrakeCommandImmediate()
+            }
+        }
+
+        // Reset state when safely back inside
+        // TWO-STAGE RESET:
+        // 1. Reset geofenceActionTaken when drone is safely inside (beyond dynamic buffer) - allows re-trigger
+        // 2. Reset warning flags only when further inside to prevent UI oscillation
+
+        // Stage 1: Reset action taken when back inside fence beyond the dynamic buffer
+        // This ensures geofence can re-trigger RTL if drone goes out again
+        // Use 2x dynamic buffer as hysteresis to prevent oscillation at boundary
+        val rearmThreshold = dynamicBuffer * 2.0
+        if (isInsideFence && distanceToFence > rearmThreshold && geofenceActionTaken) {
+            Log.i("Geofence", "✓ Drone back inside fence (${String.format("%.1f", distanceToFence)}m from edge, threshold: ${String.format("%.1f", rearmThreshold)}m) - Geofence REARMED for re-trigger")
+            geofenceActionTaken = false
+            rtlInitiated = false
             _geofenceViolationDetected.value = false
-            Log.i("Geofence", "Drone returned to safe zone")
+        }
 
+        // Stage 2: Full reset only when safely inside (3x max buffer from edge)
+        // This clears the warning UI state
+        val resetThreshold = MAX_BUFFER_METERS * 3.0
+        if (isInsideFence && distanceToFence > resetThreshold) {
+            if (_geofenceWarningTriggered.value) {
+                Log.i("Geofence", "✓ Drone safely inside fence (${String.format("%.1f", distanceToFence)}m from edge) - Warning cleared")
+                _geofenceWarningTriggered.value = false
+            }
+        }
+    }
+
+    /**
+     * Send BRAKE command immediately - FIRE AND FORGET, no waiting!
+     * Uses fire-and-forget pattern for maximum speed.
+     * Falls back to LOITER if BRAKE fails.
+     */
+    private fun sendBrakeCommandImmediate() {
+        viewModelScope.launch {
+            try {
+                geofenceTriggeringModeChange = true  // Mark that geofence is triggering mode change
+                val brakeSuccess = repo?.changeMode(MavMode.BRAKE) ?: false
+                if (!brakeSuccess) {
+                    // Fallback to LOITER which also stops movement
+                    repo?.changeMode(MavMode.LOITER)
+                }
+            } catch (e: Exception) {
+                Log.e("Geofence", "BRAKE command error: ${e.message}")
+                // Try LOITER as fallback
+                try {
+                    repo?.changeMode(MavMode.LOITER)
+                } catch (e2: Exception) {
+                    Log.e("Geofence", "LOITER fallback also failed: ${e2.message}")
+                }
+            }
+        }
+    }
+
+    /**
+     * EMERGENCY BURST: Send BRAKE to stop, then immediately try RTL.
+     * OPTIMIZED: Minimal delay between BRAKE and RTL for fast response.
+     * The BRAKE command just needs to be sent - drone starts decelerating immediately.
+     * We don't need to wait for full stop before sending RTL.
+     */
+    private fun sendEmergencyBrakeAndRTLBurst() {
+        viewModelScope.launch {
+            repo?.let { repository ->
+                Log.i("Geofence", "═══════════════════════════════════════════════════")
+                Log.i("Geofence", "🚨 EMERGENCY GEOFENCE BREACH - STOPPING DRONE!")
+                Log.i("Geofence", "═══════════════════════════════════════════════════")
+
+                // Mark that geofence is triggering mode change - prevents resume popup
+                geofenceTriggeringModeChange = true
+
+                // STEP 1: Send BRAKE command to stop immediately
+                try {
+                    Log.i("Geofence", "🛑 Sending BRAKE command...")
+                    val brakeSuccess = repository.changeMode(MavMode.BRAKE)
+                    Log.i("Geofence", "🛑 BRAKE result: $brakeSuccess")
+
+                    if (!brakeSuccess) {
+                        // Try LOITER as fallback
+                        Log.w("Geofence", "⚠️ BRAKE failed, trying LOITER...")
+                        repository.changeMode(MavMode.LOITER)
+                    }
+                } catch (e: Exception) {
+                    Log.e("Geofence", "BRAKE error: ${e.message}")
+                }
+
+                // STEP 2: Minimal delay - just enough for command to register (300ms)
+                // Drone starts braking immediately, we don't need to wait for full stop
+                Log.i("Geofence", "⏳ Brief pause before RTL (300ms)...")
+                delay(300)
+
+                // STEP 3: Mark RTL as initiated - this stops continuous BRAKE commands
+                rtlInitiated = true
+                Log.i("Geofence", "🏠 RTL process initiated - stopping BRAKE enforcement")
+
+                // STEP 4: Now send RTL and KEEP TRYING until it works
+                Log.i("Geofence", "🏠 Now sending RTL command...")
+                var rtlSuccess = false
+                var attempts = 0
+                val maxAttempts = 10
+
+                while (!rtlSuccess && attempts < maxAttempts) {
+                    attempts++
+                    try {
+                        Log.i("Geofence", "🏠 RTL attempt #$attempts...")
+                        rtlSuccess = repository.changeMode(MavMode.RTL)
+                        Log.i("Geofence", "🏠 RTL attempt #$attempts result: $rtlSuccess")
+
+                        if (rtlSuccess) {
+                            Log.i("Geofence", "✓✓✓ RTL MODE ACTIVATED SUCCESSFULLY! ✓✓✓")
+                            break
+                        }
+                    } catch (e: Exception) {
+                        Log.e("Geofence", "RTL attempt #$attempts error: ${e.message}")
+                    }
+
+                    // Short delay before retry (200ms)
+                    if (!rtlSuccess) {
+                        delay(200)
+                    }
+                }
+
+                if (rtlSuccess) {
+                    addNotification(Notification(
+                        message = "🚨 GEOFENCE BREACH - Returning home!",
+                        type = NotificationType.ERROR
+                    ))
+                    ttsManager?.speak("Geofence breach! Returning home!")
+                } else {
+                    Log.e("Geofence", "❌ RTL failed after $maxAttempts attempts - drone should remain stopped")
+                    addNotification(Notification(
+                        message = "⚠️ GEOFENCE - Drone stopped, RTL failed",
+                        type = NotificationType.WARNING
+                    ))
+                    ttsManager?.speak("Geofence! Drone stopped!")
+                }
+
+                Log.i("Geofence", "═══════════════════════════════════════════════════")
+                Log.i("Geofence", "✓ EMERGENCY GEOFENCE RESPONSE COMPLETE")
+                Log.i("Geofence", "═══════════════════════════════════════════════════")
+
+                // Reset the geofence triggering flag after a short delay
+                // This ensures mode change detection doesn't show resume popup during geofence action
+                delay(2000)
+                geofenceTriggeringModeChange = false
+                Log.d("Geofence", "Geofence mode change flag reset")
+            } ?: Log.e("Geofence", "❌ No connection - cannot send emergency commands!")
+        }
+    }
+
+    /**
+     * Handle drone returning to safe zone inside geofence
+     */
+    private fun handleReturnToSafeZone() {
+        if (_geofenceViolationDetected.value || _geofenceWarningTriggered.value) {
+            _geofenceViolationDetected.value = false
+            _geofenceWarningTriggered.value = false
+            geofenceActionTaken = false
+
+            Log.i("Geofence", "✓ Drone returned to safe zone")
             addNotification(
                 Notification(
-                    message = "GEOFENCE CLEAR: Drone returned to safe zone",
+                    message = "✓ GEOFENCE CLEAR: Drone back inside boundary",
                     type = NotificationType.INFO
                 )
             )
         }
     }
 
-    private fun switchToRTL() {
-        viewModelScope.launch {
-            repo?.let { repository ->
-                try {
-                    Log.i("Geofence", "Sending RTL command to drone")
-                    repository.changeMode(MavMode.RTL)
 
-                    addNotification(
-                        Notification(
-                            message = "RTL ACTIVATED: Return to Launch mode activated due to geofence violation",
-                            type = NotificationType.WARNING
-                        )
-                    )
-                } catch (e: Exception) {
-                    Log.e("Geofence", "Failed to switch to RTL mode: ${e.message}")
+    /**
+     * Reset geofence state - call this when starting a new mission or re-enabling geofence
+     */
+    fun resetGeofenceState() {
+        _geofenceViolationDetected.value = false
+        _geofenceWarningTriggered.value = false
+        geofenceActionTaken = false
+        rtlInitiated = false
+        lastBrakeCommandTime = 0L
+        Log.i("Geofence", "Geofence state reset - ready for new monitoring")
 
-                    addNotification(
-                        Notification(
-                            message = "RTL FAILED: Failed to activate RTL mode - ${e.message}",
-                            type = NotificationType.ERROR
-                        )
-                    )
-                }
-            } ?: run {
-                Log.e("Geofence", "Cannot switch to RTL - no connection to drone")
-            }
+        // Restart the monitor if not running
+        if (geofenceMonitorJob?.isActive != true) {
+            startGeofenceMonitor()
         }
     }
 
     override fun onCleared() {
         super.onCleared()
+        geofenceMonitorJob?.cancel()
         ttsManager?.shutdown()
-        Log.d("SharedVM", "ViewModel cleared, TTS shutdown")
+        Log.d("SharedVM", "ViewModel cleared, geofence monitor stopped, TTS shutdown")
     }
 }

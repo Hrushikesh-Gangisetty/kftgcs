@@ -144,7 +144,6 @@ object AppStrings {
     val enterPlotName get() = getString("Enter plot name", "ప్లాట్ పేరు నమోదు చేయండి")
 
     // NEW: Language Selection
-    val language get() = getString("Language", "భాష")
     val changeLanguageLater get() = getString("You can change this later from settings.", "మీరు దీన్ని తర్వాత సెట్టింగ్‌ల నుండి మార్చవచ్చు.")
 
     // NEW: Logs Screen
@@ -192,6 +191,9 @@ object AppStrings {
     // NEW: Plan Screen
     val addPoint get() = getString("Add Point", "పాయింట్ జోడించు")
     val saveMission get() = getString("Save Mission", "మిషన్ సేవ్ చేయండి")
+    val editPlan get() = getString("Edit Plan", "ప్లాన్ సవరించు")
+    val planUnlocked get() = getString("Plan unlocked for editing", "ప్లాన్ సవరణ కోసం అన్‌లాక్ చేయబడింది")
+    val planSavedEditRequired get() = getString("Plan is saved. Click 'Edit Plan' to make changes.", "ప్లాన్ సేవ్ చేయబడింది. మార్పులు చేయడానికి 'ప్లాన్ సవరించు' క్లిక్ చేయండి.")
     val uploadMissionBtn get() = getString("Upload Mission", "మిషన్ అప్‌లోడ్ చేయండి")
     val templateLoaded get() = getString("Template loaded successfully", "టెంప్లేట్ విజయవంతంగా లోడ్ చేయబడింది")
     val selectPolygonPoint get() = getString("Please select a polygon point to delete", "తొలగించడానికి దయచేసి పాలిగాన్ పాయింట్‌ను ఎంచుకోండి")
@@ -335,6 +337,7 @@ object AppStrings {
     val more get() = getString("More", "మరిన్ని")
     val logs get() = getString("Logs", "లాగ్స్")
     val disconnect get() = getString("Disconnect", "డిస్కనెక్ట్ చేయండి")
+    val language get() = getString("Language", "భాష")
     val logout get() = getString("Logout", "లాగౌట్")
 
     // Geofence Settings Popup
@@ -372,6 +375,20 @@ object AppStrings {
     val waypointReordered get() = getString("Waypoint reordered", "వేపాయింట్ క్రమం మార్చబడింది")
     val resumeFailed get() = getString("Resume failed", "పునఃప్రారంభం విఫలమైంది")
     val unknownError get() = getString("Unknown error", "తెలియని లోపం")
+
+    // Split Plan Feature
+    val splitPlanTitle get() = getString("Split Plan", "ప్లాన్ విభజించు")
+    val splitPlanDescription get() = getString("Select the portion of the grid to fly", "ఎగరడానికి గ్రిడ్ భాగాన్ని ఎంచుకోండి")
+    val splitStart get() = getString("Start", "ప్రారంభం")
+    val splitEnd get() = getString("End", "ముగింపు")
+    val gridLinesSelected get() = getString("Grid Lines Selected", "ఎంచుకున్న గ్రిడ్ లైన్లు")
+    val applySplit get() = getString("Apply Split", "విభజన వర్తింపజేయండి")
+    val cancelSplit get() = getString("Cancel", "రద్దు చేయండి")
+    val splitApplied get() = getString("Split plan applied successfully", "విభజన ప్లాన్ విజయవంతంగా వర్తింపజేయబడింది")
+    val noGridToSplit get() = getString("No grid mission to split. Please create a grid survey first.", "విభజించడానికి గ్రిడ్ మిషన్ లేదు. దయచేసి ముందుగా గ్రిడ్ సర్వే సృష్టించండి.")
+    val splitPlanBtn get() = getString("Split Plan", "ప్లాన్ విభజించు")
+    val originalPlan get() = getString("Original Plan", "అసలు ప్లాన్")
+    val splitPortion get() = getString("Split Portion", "విభజన భాగం")
 }
 
 // Composable for reactive language updates
