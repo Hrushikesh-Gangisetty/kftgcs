@@ -853,14 +853,16 @@ class MavlinkTelemetryRepository(
                             missionTimerJob = null
 
                             // === NEW: Detect AUTO → LOITER transition for "Add Resume Here" popup ===
-                            // Only show popup if this is a user-initiated LOITER, not geofence-triggered
-                            if (mode.equals("Loiter", ignoreCase = true) && !sharedViewModel.isGeofenceTriggeringModeChange) {
+                            // Only show popup if:
+                            // 1. This is a user-initiated LOITER, not geofence-triggered
+                            // 2. User selected Automatic mode (not Manual mode)
+                            if (mode.equals("Loiter", ignoreCase = true) && !sharedViewModel.isGeofenceTriggeringModeChange && sharedViewModel.isPauseResumeEnabled()) {
                                 // Get the current waypoint as the resume point
                                 val resumeWaypoint = state.value.lastAutoWaypoint.takeIf { it > 0 }
                                     ?: state.value.currentWaypoint
                                     ?: 1
 
-                                Log.i("TelemetryRepo", "🔄 AUTO → LOITER detected at waypoint $resumeWaypoint (user-initiated)")
+                                Log.i("TelemetryRepo", "🔄 AUTO → LOITER detected at waypoint $resumeWaypoint (user-initiated, pause/resume enabled)")
 
                                 // Trigger the "Add Resume Here" popup in SharedViewModel
                                 sharedViewModel.onModeChangedToLoiterFromAuto(resumeWaypoint)
@@ -870,6 +872,9 @@ class MavlinkTelemetryRepository(
                                 if (lastElapsed != null && lastElapsed > 0L) {
                                     _state.update { it.copy(lastMissionElapsedSec = lastElapsed) }
                                 }
+                            } else if (mode.equals("Loiter", ignoreCase = true) && !sharedViewModel.isPauseResumeEnabled()) {
+                                // User is in Manual mode - don't show resume popup
+                                Log.i("TelemetryRepo", "🔄 Mode change detected but SKIPPING resume popup (user in MANUAL mode)")
                             } else if (mode.equals("Loiter", ignoreCase = true)) {
                                 // Geofence triggered this LOITER - don't show resume popup
                                 Log.i("TelemetryRepo", "🔄 AUTO → LOITER detected but SKIPPING resume popup (geofence-triggered)")

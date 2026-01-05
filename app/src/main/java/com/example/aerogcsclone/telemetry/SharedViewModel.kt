@@ -134,11 +134,34 @@ class SharedViewModel : ViewModel() {
         ttsManager?.announceConnectionFailed()
     }
 
+    // ========== USER SELECTED FLIGHT MODE (Manual vs Automatic) ==========
+    // This tracks whether the user selected Manual or Automatic mode in SelectFlyingMethodScreen
+    // Used to determine if pause/resume functionality should be enabled
+    enum class UserFlightMode {
+        AUTOMATIC,  // User selected Automatic - pause/resume enabled
+        MANUAL      // User selected Manual - pause/resume disabled
+    }
+
+    private val _userSelectedFlightMode = MutableStateFlow(UserFlightMode.AUTOMATIC)
+    val userSelectedFlightMode: StateFlow<UserFlightMode> = _userSelectedFlightMode.asStateFlow()
+
+    /**
+     * Check if pause/resume functionality should be enabled
+     * Returns true only if user selected Automatic mode
+     */
+    fun isPauseResumeEnabled(): Boolean {
+        return _userSelectedFlightMode.value == UserFlightMode.AUTOMATIC
+    }
+
     fun announceSelectedAutomatic() {
+        _userSelectedFlightMode.value = UserFlightMode.AUTOMATIC
+        Log.i("SharedVM", "User selected AUTOMATIC mode - pause/resume ENABLED")
         ttsManager?.announceSelectedAutomatic()
     }
 
     fun announceSelectedManual() {
+        _userSelectedFlightMode.value = UserFlightMode.MANUAL
+        Log.i("SharedVM", "User selected MANUAL mode - pause/resume DISABLED")
         ttsManager?.announceSelectedManual()
     }
 
@@ -742,8 +765,15 @@ class SharedViewModel : ViewModel() {
     /**
      * Called when mode changes from AUTO to LOITER (detected in TelemetryRepository)
      * This shows a popup asking user if they want to set resume point here
+     * NOTE: Only works when user selected Automatic mode, not Manual mode
      */
     fun onModeChangedToLoiterFromAuto(waypointNumber: Int) {
+        // Safety check: Don't show popup if user is in Manual mode
+        if (!isPauseResumeEnabled()) {
+            Log.i("SharedVM", "=== MODE CHANGED: AUTO → LOITER === (IGNORED - user in MANUAL mode)")
+            return
+        }
+
         Log.i("SharedVM", "=== MODE CHANGED: AUTO → LOITER ===")
         Log.i("SharedVM", "Waypoint at mode change: $waypointNumber")
 
