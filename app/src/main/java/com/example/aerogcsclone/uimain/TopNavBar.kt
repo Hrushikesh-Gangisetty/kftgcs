@@ -513,7 +513,7 @@ fun TopNavBar(
 
                         // Spray Rate Slider
                         // PWM mapping: 10%=1051, 50%=1501, 100%=1951
-                        // Slider only functional when RC7 is enabled
+                        // Slider is always functional regardless of RC7 status
                         Column(modifier = Modifier.padding(vertical = 4.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(AppStrings.sprayRate, color = Color.White, modifier = Modifier.weight(1f))
@@ -522,41 +522,27 @@ fun TopNavBar(
                             Slider(
                                 value = sprayRate,
                                 onValueChange = { newRate ->
-                                    if (rc7SprayEnabled) {
-                                        // Snap to nearest 10%
-                                        val snappedRate = (Math.round(newRate / 10f) * 10f).coerceIn(10f, 100f)
-                                        telemetryViewModel.setSprayRate(snappedRate)
-                                    }
+                                    // Snap to nearest 10%
+                                    val snappedRate = (Math.round(newRate / 10f) * 10f).coerceIn(10f, 100f)
+                                    telemetryViewModel.setSprayRate(snappedRate)
                                 },
                                 valueRange = 10f..100f, // 10% to 100% (minimum 10%)
                                 steps = 8, // 9 positions: 10%, 20%, 30%, 40%, 50%, 60%, 70%, 80%, 90%, 100%
                                 modifier = Modifier.fillMaxWidth(),
-                                enabled = rc7SprayEnabled, // Only enable when RC7 is ON
+                                enabled = true, // Always enabled
                                 colors = SliderDefaults.colors(
-                                    thumbColor = if (rc7SprayEnabled) Color.Green else Color.Gray,
-                                    activeTrackColor = if (rc7SprayEnabled) Color.Green else Color.Gray,
-                                    inactiveTrackColor = Color.DarkGray,
-                                    disabledThumbColor = Color.Gray,
-                                    disabledActiveTrackColor = Color.Gray,
-                                    disabledInactiveTrackColor = Color.DarkGray
+                                    thumbColor = Color.Green,
+                                    activeTrackColor = Color.Green,
+                                    inactiveTrackColor = Color.DarkGray
                                 )
                             )
-                            // Status text based on RC7
-                            if (!rc7SprayEnabled) {
-                                Text(
-                                    "Enable RC7 to adjust spray rate",
-                                    color = Color.Red,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    modifier = Modifier.padding(top = 2.dp)
-                                )
-                            } else {
-                                Text(
-                                    AppStrings.adjustSprayIntensity,
-                                    color = Color.Gray,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    modifier = Modifier.padding(top = 2.dp)
-                                )
-                            }
+                            // Status text
+                            Text(
+                                AppStrings.adjustSprayIntensity,
+                                color = Color.Gray,
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.padding(top = 2.dp)
+                            )
                             // PWM info text (1051-1951 range)
                             val pwmValue = (1051 + (sprayRate / 100f * 900f)).toInt()
                             Text(
