@@ -156,6 +156,13 @@ fun PlanScreen(
     // Waypoint list panel state
     var showWaypointList by remember { mutableStateOf(false) }
 
+    // ===== CLEAR PREVIOUS MISSION DATA ON ENTRY =====
+    // When PlanScreen opens, clear obstacles from SharedViewModel to start fresh
+    LaunchedEffect(Unit) {
+        // Clear obstacles from SharedViewModel so MainPage map doesn't show old obstacles
+        telemetryViewModel.setObstacles(emptyList())
+    }
+
     // ===== KML FILE PICKER =====
     // File picker launcher for KML import
     val kmlFileLauncher = rememberLauncherForActivityResult(
@@ -458,6 +465,10 @@ fun PlanScreen(
                 currentObstaclePoints = emptyList()
                 isAddingObstacle = false
                 Toast.makeText(context, "Obstacle zone added!", Toast.LENGTH_SHORT).show()
+                // Regenerate grid immediately to update grid lines around obstacle
+                if (isGridGenerated && surveyPolygon.size >= 3) {
+                    regenerateGrid()
+                }
             }
             // No toast for intermediate points - UI shows count in button/card
         } else if (isGridSurveyMode) {
@@ -879,6 +890,10 @@ fun PlanScreen(
                                         currentObstaclePoints = emptyList()
                                         isAddingObstacle = false
                                         Toast.makeText(context, "Obstacle zone added!", Toast.LENGTH_SHORT).show()
+                                        // Regenerate grid immediately to update grid lines around obstacle
+                                        if (isGridGenerated && surveyPolygon.size >= 3) {
+                                            regenerateGrid()
+                                        }
                                     }
                                     // No toast for intermediate points - button shows count
                                 } else if (isGridSurveyMode) {

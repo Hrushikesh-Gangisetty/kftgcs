@@ -81,7 +81,9 @@ class GridGenerator {
             val start: LatLng,
             val end: LatLng,
             val lineIndex: Int,
-            val segmentIndex: Int
+            val segmentIndex: Int,
+            // Position of segment relative to obstacles on the line (0 = first/before, 1 = after, etc.)
+            val relativePosition: Int = 0
         )
 
         val allSegments = mutableListOf<GridSegment>()
@@ -121,72 +123,150 @@ class GridGenerator {
                     listOf(Pair(start, end))
                 }
 
-                // Add all segments for this line
+                // Add all segments for this line with relative position
                 lineSegments.forEachIndexed { segIdx, segment ->
                     allSegments.add(GridSegment(
                         start = segment.first,
                         end = segment.second,
                         lineIndex = i,
-                        segmentIndex = segIdx
+                        segmentIndex = segIdx,
+                        relativePosition = segIdx  // 0 = before obstacle, 1+ = after obstacle
                     ))
                 }
             }
         }
 
-        // Now process segments in proper boustrophedon order
-        // Group by line index
-        val segmentsByLine = allSegments.groupBy { it.lineIndex }
-        val sortedLineIndices = segmentsByLine.keys.sorted()
+        // ===== IMPROVED OBSTACLE-AWARE ORDERING =====
+        // Strategy based on reference app:
+        // 1. Complete ALL lines on one side of obstacle (Zone 0) with boustrophedon
+        // 2. Transition at the TOP or BOTTOM edge of obstacle (where no grid lines exist)
+        // 3. Complete ALL lines on the other side (Zone 1) with boustrophedon
+        //
+        // Key: Zone 0 ends at the LAST line (highest index), Zone 1 STARTS at the LAST line
+        // This way transition happens at the edge, not crossing through middle lines
 
-        var actualLineIndex = 0
-        var previousEnd: LatLng? = null
-        val processedSegments = mutableSetOf<GridSegment>()
+        // Check if we have actual split segments (obstacles caused line splits)
+        val hasMultipleSegmentsPerLine = allSegments.groupBy { it.lineIndex }.any { it.value.size > 1 }
+        val hasObstacles = params.obstacles.isNotEmpty() && hasMultipleSegmentsPerLine
 
-        for ((lineNum, lineIdx) in sortedLineIndices.withIndex()) {
-            val lineSegments = segmentsByLine[lineIdx] ?: continue
+        if (hasObstacles) {
+            // Find max relative position (number of obstacle crossings)
+            val maxRelativePosition = allSegments.maxOfOrNull { it.relativePosition } ?: 0
 
-            // Sort segments by position along the line
-            val sortedSegments = lineSegments.sortedBy { seg ->
-                seg.start.latitude + seg.start.longitude
-            }
+            // Process each "zone" separately
+            for (zone in 0..maxRelativePosition) {
+                val zoneSegments = allSegments.filter { it.relativePosition == zone }
+                if (zoneSegments.isEmpty()) continue
 
-            // Reverse direction for odd lines (boustrophedon pattern)
-            val reverseDirection = lineNum % 2 == 1
-            val orderedSegments = if (reverseDirection) sortedSegments.reversed() else sortedSegments
+                // Get unique line indices in this zone
+                val lineIndicesInZone = zoneSegments.map { it.lineIndex }.distinct()
 
-            for (segment in orderedSegments) {
-                if (segment in processedSegments) continue
-                processedSegments.add(segment)
-
-                // Determine segment direction
-                val (segStart, segEnd) = if (reverseDirection) {
-                    Pair(segment.end, segment.start)
+                // CRITICAL: Both zones process in the SAME direction (ascending)
+                // But Zone 1 should start from where Zone 0 ended
+                // Zone 0: process 1->2->3->...->N (ends at line N, top of field)
+                // Zone 1: process N->N-1->...->1 (starts at line N, goes down)
+                val orderedLineIndices = if (zone == 0) {
+                    lineIndicesInZone.sorted()  // Ascending: 1, 2, 3, ... N
                 } else {
-                    Pair(segment.start, segment.end)
+                    lineIndicesInZone.sortedDescending()  // Descending: N, N-1, ... 1
                 }
 
-                // Add the grid line for visualization
-                gridLines.add(Pair(segStart, segEnd))
+                // Process lines in this zone with boustrophedon pattern
+                for ((zoneLineNum, lineIdx) in orderedLineIndices.withIndex()) {
+                    val lineSegments = zoneSegments.filter { it.lineIndex == lineIdx }
 
-                // Add waypoints
-                waypoints.add(GridWaypoint(
-                    position = segStart,
-                    altitude = params.altitude,
-                    speed = if (params.includeSpeedCommands) params.speed else null,
-                    isLineStart = true,
-                    lineIndex = actualLineIndex
-                ))
+                    // Alternate direction based on zone-local line number for boustrophedon
+                    val reverseDirection = zoneLineNum % 2 == 1
 
-                waypoints.add(GridWaypoint(
-                    position = segEnd,
-                    altitude = params.altitude,
-                    speed = if (params.includeSpeedCommands) params.speed else null,
-                    isLineEnd = true,
-                    lineIndex = actualLineIndex
-                ))
+                    // Sort segments by position along the line
+                    val sortedSegments = lineSegments.sortedBy { seg ->
+                        seg.start.latitude + seg.start.longitude
+                    }
+                    val orderedSegments = if (reverseDirection) sortedSegments.reversed() else sortedSegments
 
-                previousEnd = segEnd
-                actualLineIndex++
+                    for (segment in orderedSegments) {
+                        // Determine segment direction based on boustrophedon
+                        val (segStart, segEnd) = if (reverseDirection) {
+                            Pair(segment.end, segment.start)
+                        } else {
+                            Pair(segment.start, segment.end)
+                        }
+
+                        // Add the grid line for visualization
+                        gridLines.add(Pair(segStart, segEnd))
+
+                        // Add waypoints
+                        waypoints.add(GridWaypoint(
+                            position = segStart,
+                            altitude = params.altitude,
+                            speed = if (params.includeSpeedCommands) params.speed else null,
+                            isLineStart = true,
+                            lineIndex = gridLines.size - 1
+                        ))
+
+                        waypoints.add(GridWaypoint(
+                            position = segEnd,
+                            altitude = params.altitude,
+                            speed = if (params.includeSpeedCommands) params.speed else null,
+                            isLineEnd = true,
+                            lineIndex = gridLines.size - 1
+                        ))
+                    }
+                }
+            }
+        } else {
+            // No obstacles - use original boustrophedon order
+            val segmentsByLine = allSegments.groupBy { it.lineIndex }
+            val sortedLineIndices = segmentsByLine.keys.sorted()
+
+            var actualLineIndex = 0
+            val processedSegments = mutableSetOf<GridSegment>()
+
+            for ((lineNum, lineIdx) in sortedLineIndices.withIndex()) {
+                val lineSegments = segmentsByLine[lineIdx] ?: continue
+
+                // Sort segments by position along the line
+                val sortedSegments = lineSegments.sortedBy { seg ->
+                    seg.start.latitude + seg.start.longitude
+                }
+
+                // Reverse direction for odd lines (boustrophedon pattern)
+                val reverseDirection = lineNum % 2 == 1
+                val orderedSegments = if (reverseDirection) sortedSegments.reversed() else sortedSegments
+
+                for (segment in orderedSegments) {
+                    if (segment in processedSegments) continue
+                    processedSegments.add(segment)
+
+                    // Determine segment direction
+                    val (segStart, segEnd) = if (reverseDirection) {
+                        Pair(segment.end, segment.start)
+                    } else {
+                        Pair(segment.start, segment.end)
+                    }
+
+                    // Add the grid line for visualization
+                    gridLines.add(Pair(segStart, segEnd))
+
+                    // Add waypoints
+                    waypoints.add(GridWaypoint(
+                        position = segStart,
+                        altitude = params.altitude,
+                        speed = if (params.includeSpeedCommands) params.speed else null,
+                        isLineStart = true,
+                        lineIndex = actualLineIndex
+                    ))
+
+                    waypoints.add(GridWaypoint(
+                        position = segEnd,
+                        altitude = params.altitude,
+                        speed = if (params.includeSpeedCommands) params.speed else null,
+                        isLineEnd = true,
+                        lineIndex = actualLineIndex
+                    ))
+
+                    actualLineIndex++
+                }
             }
         }
 
@@ -204,6 +284,7 @@ class GridGenerator {
             polygonArea = polygonArea
         )
     }
+
 
     /**
      * Trim a line to intersect with polygon boundaries
@@ -245,14 +326,17 @@ class GridGenerator {
         expandedObstacles: List<List<LatLng>>
     ): List<Pair<LatLng, LatLng>> {
         // Use very high sampling for accurate detection
-        val numSamples = 500
+        val numSamples = 1000
         val segments = mutableListOf<Pair<LatLng, LatLng>>()
 
-        if (expandedObstacles.isEmpty() && originalObstacles.isEmpty()) {
+        // Combine original and expanded obstacles - check both
+        val allObstaclesToCheck = originalObstacles + expandedObstacles
+
+        if (allObstaclesToCheck.isEmpty()) {
             return listOf(Pair(start, end))
         }
 
-        // Sample points along the line
+        // Sample points along the line and check if each is inside any obstacle
         val pointsAlongLine = mutableListOf<Pair<LatLng, Boolean>>()
 
         for (i in 0..numSamples) {
@@ -261,27 +345,23 @@ class GridGenerator {
             val lng = start.longitude + t * (end.longitude - start.longitude)
             val point = LatLng(lat, lng)
 
-            var isInsideObstacle = false
+            var isInsideAnyObstacle = false
 
-            // Check original obstacles first
-            for (obstacle in originalObstacles) {
-                if (isPointInPolygonRobust(point, obstacle)) {
-                    isInsideObstacle = true
-                    break
-                }
-            }
-
-            // Then check expanded obstacles (buffer zone)
-            if (!isInsideObstacle) {
-                for (obstacle in expandedObstacles) {
-                    if (isPointInPolygonRobust(point, obstacle)) {
-                        isInsideObstacle = true
+            // Check against all obstacles using multiple algorithms for robustness
+            for (obstacle in allObstaclesToCheck) {
+                if (obstacle.size >= 3) {
+                    // Use both winding number and ray casting for maximum accuracy
+                    val insideByWinding = isPointInsidePolygonWinding(point, obstacle)
+                    val insideByRayCast = isPointInPolygonRobust(point, obstacle)
+                    if (insideByWinding || insideByRayCast) {
+                        isInsideAnyObstacle = true
                         break
                     }
                 }
             }
 
-            pointsAlongLine.add(Pair(point, !isInsideObstacle))
+            // isValid = true means point is OUTSIDE all obstacles (safe to fly)
+            pointsAlongLine.add(Pair(point, !isInsideAnyObstacle))
         }
 
         // Build segments from consecutive valid (outside obstacle) points
@@ -297,10 +377,10 @@ class GridGenerator {
                 lastValidPoint = point
                 validPointCount++
             } else {
-                // End of valid segment
-                if (segmentStart != null && lastValidPoint != null && validPointCount >= 5) {
+                // End of valid segment - we hit an obstacle
+                if (segmentStart != null && lastValidPoint != null && validPointCount >= 3) {
                     val segLength = GridUtils.haversineDistance(segmentStart, lastValidPoint)
-                    if (segLength >= 1.0) {
+                    if (segLength >= 0.5) { // At least 0.5 meter segment
                         segments.add(Pair(segmentStart, lastValidPoint))
                     }
                 }
@@ -311,16 +391,18 @@ class GridGenerator {
         }
 
         // Add final segment if exists
-        if (segmentStart != null && lastValidPoint != null && validPointCount >= 5) {
+        if (segmentStart != null && lastValidPoint != null && validPointCount >= 3) {
             val segLength = GridUtils.haversineDistance(segmentStart, lastValidPoint)
-            if (segLength >= 1.0) {
+            if (segLength >= 0.5) {
                 segments.add(Pair(segmentStart, lastValidPoint))
             }
         }
 
+        // If no segments found but entire line is valid, return original line
         return if (segments.isEmpty() && pointsAlongLine.all { it.second }) {
             listOf(Pair(start, end))
         } else if (segments.isEmpty()) {
+            // Entire line is inside obstacle(s)
             emptyList()
         } else {
             segments
@@ -328,7 +410,46 @@ class GridGenerator {
     }
 
     /**
-     * Robust point-in-polygon test
+     * Winding number algorithm for point-in-polygon test
+     * More robust than ray casting for complex polygons
+     */
+    private fun isPointInsidePolygonWinding(point: LatLng, polygon: List<LatLng>): Boolean {
+        if (polygon.size < 3) return false
+
+        val x = point.longitude
+        val y = point.latitude
+        var windingNumber = 0
+
+        for (i in polygon.indices) {
+            val x1 = polygon[i].longitude
+            val y1 = polygon[i].latitude
+            val x2 = polygon[(i + 1) % polygon.size].longitude
+            val y2 = polygon[(i + 1) % polygon.size].latitude
+
+            if (y1 <= y) {
+                if (y2 > y) {
+                    // Upward crossing
+                    val cross = (x2 - x1) * (y - y1) - (x - x1) * (y2 - y1)
+                    if (cross > 0) {
+                        windingNumber++
+                    }
+                }
+            } else {
+                if (y2 <= y) {
+                    // Downward crossing
+                    val cross = (x2 - x1) * (y - y1) - (x - x1) * (y2 - y1)
+                    if (cross < 0) {
+                        windingNumber--
+                    }
+                }
+            }
+        }
+
+        return windingNumber != 0
+    }
+
+    /**
+     * Robust point-in-polygon test using ray casting
      */
     private fun isPointInPolygonRobust(point: LatLng, polygon: List<LatLng>): Boolean {
         if (polygon.size < 3) return false

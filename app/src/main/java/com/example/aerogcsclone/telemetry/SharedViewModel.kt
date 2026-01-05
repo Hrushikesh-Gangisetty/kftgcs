@@ -94,6 +94,7 @@ class SharedViewModel : ViewModel() {
         _surveyPolygon.value = emptyList()
         _gridLines.value = emptyList()
         _planningWaypoints.value = emptyList()
+        _obstacles.value = emptyList()  // Clear obstacle zones
         _missionAreaSqMeters.value = 0.0
         _missionAreaFormatted.value = "0 acres"
         _missionUploaded.value = false
