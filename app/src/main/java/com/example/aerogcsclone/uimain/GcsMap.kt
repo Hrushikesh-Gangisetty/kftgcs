@@ -216,6 +216,70 @@ private fun createSmallResumeMarker(): BitmapDescriptor {
     return BitmapDescriptorFactory.fromBitmap(bitmap)
 }
 
+// Helper function to create RC marker icon for phone GPS location
+private fun createRCMarker(): BitmapDescriptor {
+    val size = 80 // Size for RC marker
+    val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+
+    // Draw outer circle with green color
+    val outerPaint = android.graphics.Paint().apply {
+        isAntiAlias = true
+        color = android.graphics.Color.rgb(76, 175, 80) // Material Green 500
+        style = android.graphics.Paint.Style.FILL
+    }
+    canvas.drawCircle(size / 2f, size / 2f, size / 2f - 4, outerPaint)
+
+    // Draw white border for visibility
+    val borderPaint = android.graphics.Paint().apply {
+        isAntiAlias = true
+        color = android.graphics.Color.WHITE
+        style = android.graphics.Paint.Style.STROKE
+        strokeWidth = 4f
+    }
+    canvas.drawCircle(size / 2f, size / 2f, size / 2f - 4, borderPaint)
+
+    // Draw dark outline for contrast
+    val outlinePaint = android.graphics.Paint().apply {
+        isAntiAlias = true
+        color = android.graphics.Color.DKGRAY
+        style = android.graphics.Paint.Style.STROKE
+        strokeWidth = 1.5f
+    }
+    canvas.drawCircle(size / 2f, size / 2f, size / 2f - 1, outlinePaint)
+
+    // Draw "RC" text
+    val textPaint = android.graphics.Paint().apply {
+        isAntiAlias = true
+        color = android.graphics.Color.WHITE
+        textSize = 32f
+        typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+        textAlign = android.graphics.Paint.Align.CENTER
+    }
+
+    // Add text shadow for better readability
+    textPaint.setShadowLayer(2f, 1f, 1f, android.graphics.Color.BLACK)
+
+    // Center the text vertically
+    val textBounds = android.graphics.Rect()
+    textPaint.getTextBounds("RC", 0, 2, textBounds)
+    val textY = size / 2f + textBounds.height() / 2f - textBounds.bottom
+
+    canvas.drawText("RC", size / 2f, textY, textPaint)
+
+    // Draw a small pulse ring effect
+    val pulsePaint = android.graphics.Paint().apply {
+        isAntiAlias = true
+        color = android.graphics.Color.rgb(76, 175, 80)
+        style = android.graphics.Paint.Style.STROKE
+        strokeWidth = 2f
+        alpha = 128
+    }
+    canvas.drawCircle(size / 2f, size / 2f, size / 2f - 1, pulsePaint)
+
+    return BitmapDescriptorFactory.fromBitmap(bitmap)
+}
+
 // Helper function to create drone icon with directional arrow indicating nose heading
 private fun createDroneIconWithArrow(context: android.content.Context): BitmapDescriptor? {
     return runCatching {
@@ -322,7 +386,10 @@ fun GcsMap(
     // Enable obstacle editing mode (shows X markers, allows selection)
     obstacleEditingEnabled: Boolean = false,
     // Resume point location - shows "R" marker where drone paused
-    resumePointLocation: LatLng? = null
+    resumePointLocation: LatLng? = null,
+    // RC Mode - Phone GPS location for RC marker
+    phoneLocation: LatLng? = null,
+    isRCMode: Boolean = false
 ) {
     val context = LocalContext.current
     val cameraState = cameraPositionState ?: rememberCameraPositionState()
@@ -346,6 +413,7 @@ fun GcsMap(
     val endMarker = remember { createMarkerWithText("E", android.graphics.Color.RED) }
     val obstacleXMarker = remember { createMarkerWithText("X", android.graphics.Color.RED) } // For obstacle centroid
     val resumeMarker = remember { createSmallResumeMarker() } // Small green "R" for resume point
+    val rcMarker = remember { createRCMarker() } // RC marker for phone GPS location
 
     val lat = telemetryState.latitude
     val lon = telemetryState.longitude
@@ -937,6 +1005,19 @@ fun GcsMap(
                 snippet = "Drone paused here",
                 icon = resumeMarker,
                 anchor = Offset(0.5f, 0.5f)
+            )
+        }
+
+        // ===== RC MODE MARKER =====
+        // Show RC marker at phone's GPS location when in RC mode
+        if (isRCMode && phoneLocation != null) {
+            Marker(
+                state = MarkerState(position = phoneLocation),
+                title = "RC (Phone GPS)",
+                snippet = "Your current location",
+                icon = rcMarker,
+                anchor = Offset(0.5f, 0.5f),
+                zIndex = 10f // Keep RC marker on top
             )
         }
 

@@ -123,4 +123,7 @@ dependencies {
     implementation ("androidx.lifecycle:lifecycle-runtime-ktx:2.6.2")
     implementation ("com.google.firebase:firebase-auth-ktx:22.3.1")
     implementation ("com.google.android.gms:play-services-auth:20.7.0")
+
+    // Google Play Services Location for phone GPS in RC mode
+    implementation("com.google.android.gms:play-services-location:21.0.1")
 }

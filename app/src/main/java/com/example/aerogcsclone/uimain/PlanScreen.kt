@@ -1,9 +1,18 @@
 package com.example.aerogcsclone.uimain
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Looper
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationResult
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -156,11 +165,71 @@ fun PlanScreen(
     // Waypoint list panel state
     var showWaypointList by remember { mutableStateOf(false) }
 
+    // ===== RC MODE STATE (Phone GPS) =====
+    // Flag to indicate if we're in RC mode (using phone GPS for boundary points)
+    var isRCMode by remember { mutableStateOf(false) }
+    // Phone's current GPS location
+    var phoneLocation by remember { mutableStateOf<LatLng?>(null) }
+    // FusedLocationProviderClient for phone GPS
+    val fusedLocationClient = remember { LocationServices.getFusedLocationProviderClient(context) }
+    // Location callback for continuous updates
+    val locationCallback = remember {
+        object : LocationCallback() {
+            override fun onLocationResult(locationResult: LocationResult) {
+                locationResult.lastLocation?.let { location ->
+                    phoneLocation = LatLng(location.latitude, location.longitude)
+                }
+            }
+        }
+    }
+
     // ===== CLEAR PREVIOUS MISSION DATA ON ENTRY =====
     // When PlanScreen opens, clear obstacles from SharedViewModel to start fresh
     LaunchedEffect(Unit) {
         // Clear obstacles from SharedViewModel so MainPage map doesn't show old obstacles
         telemetryViewModel.setObstacles(emptyList())
+    }
+
+    // ===== RC MODE LOCATION UPDATES =====
+    // Start/stop phone GPS location updates when RC mode is enabled/disabled
+    LaunchedEffect(isRCMode) {
+        if (isRCMode) {
+            val hasLocationPermission = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.ACCESS_FINE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
+
+            if (hasLocationPermission) {
+                val locationRequest = LocationRequest.Builder(
+                    Priority.PRIORITY_HIGH_ACCURACY,
+                    1000L // Update every 1 second
+                ).setMinUpdateIntervalMillis(500L).build()
+
+                try {
+                    fusedLocationClient.requestLocationUpdates(
+                        locationRequest,
+                        locationCallback,
+                        Looper.getMainLooper()
+                    )
+                } catch (e: SecurityException) {
+                    android.util.Log.e("PlanScreen", "Location permission denied: ${e.message}")
+                }
+            } else {
+                Toast.makeText(context, "Location permission required for RC mode", Toast.LENGTH_SHORT).show()
+                isRCMode = false
+            }
+        } else {
+            // Stop location updates when RC mode is disabled
+            fusedLocationClient.removeLocationUpdates(locationCallback)
+            phoneLocation = null
+        }
+    }
+
+    // Cleanup location updates when composable is disposed
+    DisposableEffect(Unit) {
+        onDispose {
+            fusedLocationClient.removeLocationUpdates(locationCallback)
+        }
     }
 
     // ===== KML FILE PICKER =====
@@ -690,7 +759,10 @@ fun PlanScreen(
                     }
                 },
                 // Enable obstacle editing in plan screen
-                obstacleEditingEnabled = true
+                obstacleEditingEnabled = true,
+                // RC Mode parameters for phone GPS location marker
+                phoneLocation = phoneLocation,
+                isRCMode = isRCMode
             )
 
             // Geofence adjustment helper text
@@ -711,6 +783,53 @@ fun PlanScreen(
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                         textAlign = TextAlign.Center
                     )
+                }
+            }
+
+            // RC Mode info card - shows at top when in RC mode
+            if (isRCMode) {
+                Card(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = if (geofenceEnabled && (if (hasStartedPlanning) localGeofencePolygon else geofencePolygon).isNotEmpty()) 60.dp else 16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = Color(0xFF4CAF50).copy(alpha = 0.95f) // Green for RC mode
+                    ),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "📱 RC Mode - Phone GPS Active",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Center
+                        )
+                        if (phoneLocation != null) {
+                            Text(
+                                text = "Lat: ${String.format(Locale.US, "%.6f", phoneLocation!!.latitude)}, Lng: ${String.format(Locale.US, "%.6f", phoneLocation!!.longitude)}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White.copy(alpha = 0.9f),
+                                textAlign = TextAlign.Center
+                            )
+                            Text(
+                                text = "Walk to corners and tap 'Add RC Point'",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White.copy(alpha = 0.8f),
+                                textAlign = TextAlign.Center
+                            )
+                        } else {
+                            Text(
+                                text = "⏳ Waiting for GPS signal...",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.Yellow,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
                 }
             }
 
@@ -875,13 +994,24 @@ fun PlanScreen(
                 ) {
                     // === EDITING STATE: Show Add Point and Save Mission buttons ===
                     if (!isPlanSaved) {
-                        // Add Point/Boundary/Obstacle button with text and transparent background
+                        // Add Point/Boundary/Obstacle/RC Point button with text and transparent background
                         ElevatedButton(
                             onClick = {
-                                val center = cameraPositionState.position.target
+                                // Get point to add - phone GPS in RC mode, map center otherwise
+                                val currentPhoneLocation = phoneLocation // Copy to local for smart cast
+                                val pointToAdd: LatLng = if (isRCMode && currentPhoneLocation != null) {
+                                    currentPhoneLocation
+                                } else if (isRCMode) {
+                                    // RC mode but no GPS yet
+                                    Toast.makeText(context, "Waiting for GPS location...", Toast.LENGTH_SHORT).show()
+                                    return@ElevatedButton
+                                } else {
+                                    cameraPositionState.position.target
+                                }
+
                                 if (isAddingObstacle) {
-                                    // Adding obstacle points using crosshair
-                                    currentObstaclePoints = currentObstaclePoints + center
+                                    // Adding obstacle points using crosshair or RC GPS
+                                    currentObstaclePoints = currentObstaclePoints + pointToAdd
                                     if (currentObstaclePoints.size >= 4) {
                                         // Auto-complete the obstacle when 4 points are added
                                         // Order points clockwise to avoid hourglass rendering
@@ -897,18 +1027,25 @@ fun PlanScreen(
                                     }
                                     // No toast for intermediate points - button shows count
                                 } else if (isGridSurveyMode) {
-                                    surveyPolygon = surveyPolygon + center
+                                    surveyPolygon = surveyPolygon + pointToAdd
+                                    if (isRCMode) {
+                                        Toast.makeText(context, "Point ${surveyPolygon.size} added at RC location", Toast.LENGTH_SHORT).show()
+                                    }
                                     // Only regenerate grid if already generated (not in plot definition mode)
                                     if (isGridGenerated && surveyPolygon.size >= 3) regenerateGrid()
                                 } else {
                                     val seq = waypoints.size
-                                    val item = buildMissionItemFromLatLng(center, seq, seq == 0)
-                                    points.add(center)
+                                    val item = buildMissionItemFromLatLng(pointToAdd, seq, seq == 0)
+                                    points.add(pointToAdd)
                                     waypoints.add(item)
                                 }
                             },
                             colors = ButtonDefaults.elevatedButtonColors(
-                                containerColor = if (isAddingObstacle) Color.Red.copy(alpha = 0.9f) else Color.Black.copy(alpha = 0.7f),
+                                containerColor = when {
+                                    isAddingObstacle -> Color.Red.copy(alpha = 0.9f)
+                                    isRCMode -> Color(0xFF4CAF50).copy(alpha = 0.9f) // Green for RC mode
+                                    else -> Color.Black.copy(alpha = 0.7f)
+                                },
                                 contentColor = Color.White
                             ),
                             elevation = ButtonDefaults.elevatedButtonElevation(
@@ -917,7 +1054,11 @@ fun PlanScreen(
                             modifier = Modifier.widthIn(min = 120.dp)
                         ) {
                             Icon(
-                                if (isAddingObstacle) Icons.Default.Block else Icons.Default.Add,
+                                when {
+                                    isAddingObstacle -> Icons.Default.Block
+                                    isRCMode -> Icons.Default.MyLocation
+                                    else -> Icons.Default.Add
+                                },
                                 contentDescription = null,
                                 modifier = Modifier.size(18.dp)
                             )
@@ -925,7 +1066,9 @@ fun PlanScreen(
                             Text(
                                 when {
                                     isAddingObstacle -> "Add Obstacle (${currentObstaclePoints.size}/4)"
+                                    isRCMode && isGridSurveyMode && isPlotDefinitionMode && !isGridGenerated -> "Add RC Point"
                                     isGridSurveyMode && isPlotDefinitionMode && !isGridGenerated -> "Add Boundary"
+                                    isRCMode -> "Add RC Point"
                                     else -> AppStrings.addPoint
                                 }
                             )
@@ -2259,6 +2402,17 @@ fun PlanScreen(
                         showGridControls = false // Don't show grid controls until plot is generated
                         hasStartedPlanning = true
                         Toast.makeText(context, "Tap 'Add Point' to use drone position as boundary point", Toast.LENGTH_SHORT).show()
+                    },
+                    onUseRC = {
+                        // RC mode - use phone GPS position to mark corners
+                        showGridSourceDialog = false
+                        isGridSurveyMode = true
+                        isPlotDefinitionMode = true
+                        isGridGenerated = false
+                        showGridControls = false
+                        hasStartedPlanning = true
+                        isRCMode = true // Enable RC mode for phone GPS tracking
+                        Toast.makeText(context, "RC Mode: Walk to corners and tap 'Add RC Point' to mark boundary", Toast.LENGTH_LONG).show()
                     },
                     onBack = {
                         showGridSourceDialog = false

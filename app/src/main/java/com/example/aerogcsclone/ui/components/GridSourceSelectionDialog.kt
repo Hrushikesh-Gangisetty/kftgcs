@@ -31,6 +31,7 @@ fun GridSourceSelectionDialog(
     onImportKml: () -> Unit,
     onUseMap: () -> Unit,
     onPlaceWithDrone: () -> Unit,
+    onUseRC: () -> Unit,
     onBack: () -> Unit
 ) {
     val configuration = LocalConfiguration.current
@@ -228,6 +229,50 @@ fun GridSourceSelectionDialog(
                                 text = "Position",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(if (isSmallScreen) 6.dp else 10.dp))
+
+                    // RC (Remote Controller / Phone GPS) Button
+                    OutlinedButton(
+                        onClick = onUseRC,
+                        modifier = Modifier
+                            .widthIn(min = buttonWidth)
+                            .height(buttonHeight),
+                        contentPadding = PaddingValues(6.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = Color(0xFF4CAF50) // Green color for RC
+                        )
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.RadioButtonChecked,
+                                contentDescription = null,
+                                modifier = Modifier.size(iconSize),
+                                tint = Color(0xFF4CAF50)
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "RC",
+                                fontWeight = FontWeight.Bold,
+                                style = if (isSmallScreen) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                color = Color(0xFF4CAF50)
+                            )
+                            Text(
+                                text = "Phone GPS",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color(0xFF4CAF50).copy(alpha = 0.8f),
                                 textAlign = TextAlign.Center,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
