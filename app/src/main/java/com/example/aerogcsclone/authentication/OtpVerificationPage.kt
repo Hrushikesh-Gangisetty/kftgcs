@@ -42,7 +42,7 @@ fun OtpVerificationPage(
     val context = LocalContext.current
 
     // Timer state - 2 minutes = 120 seconds
-    var timerSeconds by remember { mutableIntStateOf(120) }
+    var timerSeconds by remember { mutableStateOf(120) }
     var isTimerRunning by remember { mutableStateOf(true) }
 
     // Countdown timer effect

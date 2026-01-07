@@ -18,7 +18,7 @@ import com.example.aerogcsclone.database.tlog.*
         EventEntity::class,
         MapDataEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 @TypeConverters(MissionTemplateTypeConverters::class, TlogTypeConverters::class)
@@ -41,7 +41,8 @@ abstract class MissionTemplateDatabase : RoomDatabase() {
                     MissionTemplateDatabase::class.java,
                     "mission_template_database"
                 )
-                .fallbackToDestructiveMigration() // For now, will recreate on schema change
+                .fallbackToDestructiveMigration()
+                .fallbackToDestructiveMigrationOnDowngrade()
                 .build()
                 INSTANCE = instance
                 instance

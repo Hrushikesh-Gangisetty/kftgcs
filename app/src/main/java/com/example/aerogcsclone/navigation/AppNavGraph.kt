@@ -130,7 +130,12 @@ fun AppNavGraph(navController: NavHostController) {
         }
 
         composable("otp_verification/{email}") { backStackEntry ->
-            val email = backStackEntry.arguments?.getString("email") ?: ""
+            val encodedEmail = backStackEntry.arguments?.getString("email") ?: ""
+            val email = try {
+                java.net.URLDecoder.decode(encodedEmail, "UTF-8")
+            } catch (e: Exception) {
+                encodedEmail
+            }
             OtpVerificationPage(
                 navController = navController,
                 authViewModel = authViewModel,
