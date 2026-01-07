@@ -11,8 +11,35 @@ import org.json.JSONObject
  * ✅ STEP 2 — Send session_start on connection (onOpen)
  * ✅ STEP 3 — Wait for session_ack from server (onMessage)
  * ✅ STEP 4 — Gate telemetry until readyForTelemetry = true (sendTelemetry)
+ * ✅ STEP 5 — Send mission status updates (sendMissionStatus)
  */
 class WebSocketManager {
+
+    companion object {
+        /**
+         * Mission Status Constants
+         * 0 = Created (set by backend)
+         * 1 = Started
+         * 2 = Paused
+         * 3 = Resumed
+         * 4 = Ended
+         */
+        const val MISSION_STATUS_CREATED = 0
+        const val MISSION_STATUS_STARTED = 1
+        const val MISSION_STATUS_PAUSED = 2
+        const val MISSION_STATUS_RESUMED = 3
+        const val MISSION_STATUS_ENDED = 4
+
+        // Singleton instance for global access
+        @Volatile
+        private var INSTANCE: WebSocketManager? = null
+
+        fun getInstance(): WebSocketManager {
+            return INSTANCE ?: synchronized(this) {
+                INSTANCE ?: WebSocketManager().also { INSTANCE = it }
+            }
+        }
+    }
 
     private val TAG = "WebSocketManager"
     private val client = OkHttpClient()
@@ -250,6 +277,45 @@ class WebSocketManager {
                 "rate=${sprayRate}L/min, tank=${tankLevel}%")
         } catch (e: Exception) {
             Log.e(TAG, "Error sending telemetry: ${e.message}", e)
+        }
+    }
+
+    /**
+     * Send mission status update to backend
+     * @param status One of MISSION_STATUS_* constants
+     */
+    fun sendMissionStatus(status: Int) {
+        // Safety checks
+        if (!isConnected || missionId == null) {
+            Log.e(TAG, "⛔ Cannot send mission status — socket not ready (connected=$isConnected, missionId=$missionId)")
+            return
+        }
+
+        if (!::webSocket.isInitialized) {
+            Log.e(TAG, "⛔ Cannot send mission status — webSocket not initialized")
+            return
+        }
+
+        try {
+            val msg = JSONObject().apply {
+                put("type", "mission_status")
+                put("mission_id", missionId)
+                put("status", status)
+            }
+
+            webSocket.send(msg.toString())
+            val statusName = when (status) {
+                MISSION_STATUS_CREATED -> "CREATED"
+                MISSION_STATUS_STARTED -> "STARTED"
+                MISSION_STATUS_PAUSED -> "PAUSED"
+                MISSION_STATUS_RESUMED -> "RESUMED"
+                MISSION_STATUS_ENDED -> "ENDED"
+                else -> "UNKNOWN($status)"
+            }
+            Log.d(TAG, "📤 Sent mission status: $statusName (status=$status, mission_id=$missionId)")
+
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Failed to send mission status", e)
         }
     }
 

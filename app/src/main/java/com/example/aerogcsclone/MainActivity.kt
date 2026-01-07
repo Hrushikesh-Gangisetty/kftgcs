@@ -39,7 +39,7 @@ private val DarkColorScheme = darkColorScheme(
 class MainActivity : ComponentActivity() {
 
     private val hasRequiredPermissions = mutableStateOf(false)
-    private val wsManager = WebSocketManager()
+    private val wsManager = WebSocketManager.getInstance()
 
     private val requestPermissionsLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
