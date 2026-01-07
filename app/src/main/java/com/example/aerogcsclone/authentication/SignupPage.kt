@@ -39,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -186,12 +187,56 @@ fun SignupPage(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 // Password
+                var passwordFocused by remember { mutableStateOf(false) }
                 OutlinedTextField(
                     value = password,
                     onValueChange = { password = it },
                     label = { Text(text = AppStrings.password) },
-                    colors = textFieldColors
+                    colors = textFieldColors,
+                    modifier = Modifier.onFocusChanged { focusState ->
+                        passwordFocused = focusState.isFocused
+                    }
                 )
+
+                // Password requirements - only show when password field is focused
+                if (passwordFocused) {
+                    Column(
+                        modifier = Modifier
+                            .padding(start = 8.dp, top = 4.dp),
+                        horizontalAlignment = Alignment.Start
+                    ) {
+                        Text(
+                            text = "Password must contain:",
+                            fontSize = 10.sp,
+                            color = Color.DarkGray
+                        )
+                        Text(
+                            text = "• At least 8 characters",
+                            fontSize = 10.sp,
+                            color = Color.DarkGray
+                        )
+                        Text(
+                            text = "• At least one uppercase letter (A-Z)",
+                            fontSize = 10.sp,
+                            color = Color.DarkGray
+                        )
+                        Text(
+                            text = "• At least one lowercase letter (a-z)",
+                            fontSize = 10.sp,
+                            color = Color.DarkGray
+                        )
+                        Text(
+                            text = "• At least one number (0-9)",
+                            fontSize = 10.sp,
+                            color = Color.DarkGray
+                        )
+                        Text(
+                            text = "• At least one special character (!@#\$%^&*)",
+                            fontSize = 10.sp,
+                            color = Color.DarkGray
+                        )
+                    }
+                }
 
                 Spacer(modifier = Modifier.height(8.dp))
 
