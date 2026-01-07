@@ -18,7 +18,7 @@ import com.example.aerogcsclone.database.tlog.*
         EventEntity::class,
         MapDataEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 @TypeConverters(MissionTemplateTypeConverters::class, TlogTypeConverters::class)

@@ -1739,6 +1739,13 @@ class SharedViewModel : ViewModel() {
                 if (result) {
                     Log.i("SharedVM", "✓ Mission start acknowledged by FCU")
 
+                    // ✅ Send mission status STARTED to backend (crash-safe)
+                    try {
+                        WebSocketManager.getInstance().sendMissionStatus(WebSocketManager.MISSION_STATUS_STARTED)
+                    } catch (e: Exception) {
+                        Log.e("SharedVM", "Failed to send STARTED status", e)
+                    }
+
                     // Start yaw enforcement if yaw hold is enabled
                     if (_yawHoldEnabled.value && _lockedYaw.value != null) {
                         Log.i("SharedVM", "🧭 Starting yaw enforcement for locked yaw: ${_lockedYaw.value}°")
@@ -1802,6 +1809,13 @@ class SharedViewModel : ViewModel() {
                     // Don't set missionPaused here - let the mode change detection handle it
                     // The popup will be shown by onModeChangedToLoiterFromAuto()
                     Log.i("SharedVM", "LOITER mode change command sent. Waiting for mode change detection...")
+
+                    // ✅ Send mission status PAUSED to backend (crash-safe)
+                    try {
+                        WebSocketManager.getInstance().sendMissionStatus(WebSocketManager.MISSION_STATUS_PAUSED)
+                    } catch (e: Exception) {
+                        Log.e("SharedVM", "Failed to send PAUSED status", e)
+                    }
 
                     // Announce via TTS
                     ttsManager?.announceMissionPaused(waypointToStore ?: 0)
@@ -1997,6 +2011,13 @@ class SharedViewModel : ViewModel() {
                     )
                 }
 
+                // ✅ Send mission status RESUMED to backend (crash-safe)
+                try {
+                    WebSocketManager.getInstance().sendMissionStatus(WebSocketManager.MISSION_STATUS_RESUMED)
+                } catch (e: Exception) {
+                    Log.e("SharedVM", "Failed to send RESUMED status", e)
+                }
+
                 // Mark mission as uploaded
                 _missionUploaded.value = true
                 lastUploadedCount = resequenced.size
@@ -2041,6 +2062,14 @@ class SharedViewModel : ViewModel() {
 
                     if (result) {
                         _telemetryState.update { it.copy(missionPaused = false) }
+
+                        // ✅ Send mission status RESUMED to backend (crash-safe)
+                        try {
+                            WebSocketManager.getInstance().sendMissionStatus(WebSocketManager.MISSION_STATUS_RESUMED)
+                        } catch (e: Exception) {
+                            Log.e("SharedVM", "Failed to send RESUMED status", e)
+                        }
+
                         addNotification(Notification("Mission resumed", NotificationType.INFO))
                         ttsManager?.announceMissionResumed()
                         onResult(true, null)
@@ -2072,6 +2101,14 @@ class SharedViewModel : ViewModel() {
                             pausedAtWaypoint = null
                         ) 
                     }
+
+                    // ✅ Send mission status RESUMED to backend (crash-safe)
+                    try {
+                        WebSocketManager.getInstance().sendMissionStatus(WebSocketManager.MISSION_STATUS_RESUMED)
+                    } catch (e: Exception) {
+                        Log.e("SharedVM", "Failed to send RESUMED status", e)
+                    }
+
                     addNotification(
                         Notification(
                             message = "Mission resumed from waypoint $pausedWaypoint",

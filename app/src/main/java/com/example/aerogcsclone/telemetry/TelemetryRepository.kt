@@ -907,6 +907,14 @@ class MavlinkTelemetryRepository(
                                     // Only set missionCompleted if we had a meaningful mission (elapsed time > 0)
                                     if ((lastElapsed ?: 0L) > 0L) {
                                         _state.update { it.copy(missionElapsedSec = null, missionCompleted = true, lastMissionElapsedSec = lastElapsed) }
+
+                                        // ✅ Send mission status ENDED to backend (crash-safe)
+                                        try {
+                                            WebSocketManager.getInstance().sendMissionStatus(WebSocketManager.MISSION_STATUS_ENDED)
+                                        } catch (e: Exception) {
+                                            Log.e("TelemetryRepo", "Failed to send ENDED status", e)
+                                        }
+
                                         Log.i("TelemetryRepo", "✅ Mission completed - elapsed: ${lastElapsed}s (mode: $lastMode -> $mode)")
                                     } else {
                                         // No meaningful mission - just reset state without triggering completion
