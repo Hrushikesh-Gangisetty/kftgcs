@@ -33,7 +33,9 @@ class FlightLoggingService(
                         speed = telemetryState.groundspeed, // Correct property name
                         latitude = telemetryState.latitude,
                         longitude = telemetryState.longitude,
-                        heading = telemetryState.heading
+                        heading = telemetryState.heading,
+                        droneUid = telemetryState.droneUid,
+
                     )
 
                     // Also log GPS position for map replay

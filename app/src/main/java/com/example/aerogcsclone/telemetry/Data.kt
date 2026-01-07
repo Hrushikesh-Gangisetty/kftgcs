@@ -91,6 +91,14 @@ data class TelemetryState(
     // This tracks the waypoint number during mission execution to pre-fill resume dialog
     val lastAutoWaypoint: Int = -1,
 
+    // Drone identification from AUTOPILOT_VERSION message
+    val droneUid: String? = null,  // Primary UID from uid or uid2 field
+    val droneUid2: String? = null, // Secondary UID from uid2 field (if different from uid)
+    val vendorId: Int? = null,     // Board vendor ID
+    val productId: Int? = null,    // Board product ID
+    val firmwareVersion: String? = null, // Formatted firmware version
+    val boardVersion: Int? = null, // Hardware/board version
+
     // Spray telemetry for agricultural drones
     val sprayTelemetry: SprayTelemetry = SprayTelemetry()
 )

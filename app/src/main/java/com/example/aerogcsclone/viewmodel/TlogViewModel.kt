@@ -144,7 +144,9 @@ class TlogViewModel(application: Application) : AndroidViewModel(application) {
         speed: Float?,
         latitude: Double?,
         longitude: Double?,
-        heading: Float? = null
+        heading: Float? = null,
+        droneUid: String? = null,
+
     ) {
         viewModelScope.launch {
             val flightId = currentFlightId
@@ -164,7 +166,9 @@ class TlogViewModel(application: Application) : AndroidViewModel(application) {
                 speed = speed,
                 latitude = latitude,
                 longitude = longitude,
-                heading = heading
+                heading = heading,
+                droneUid = droneUid,
+
             )
             // Log every 30 seconds to avoid spam
             if (System.currentTimeMillis() % 30000 < 5000) {

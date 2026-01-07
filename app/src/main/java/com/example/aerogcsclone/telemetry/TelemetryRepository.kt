@@ -361,6 +361,28 @@ class MavlinkTelemetryRepository(
                             setMessageRate(109u, 1f) // RADIO_STATUS (1Hz for RC battery monitoring)
                             Log.i("RCBattery", "✓ RADIO_STATUS message request sent to FCU")
 
+                            // Request AUTOPILOT_VERSION for drone identification
+                            Log.i("DroneID", "📡 Requesting AUTOPILOT_VERSION for drone identification")
+                            val autopilotVersionCmd = CommandLong(
+                                targetSystem = fcuSystemId,
+                                targetComponent = fcuComponentId,
+                                command = MavCmd.REQUEST_MESSAGE.wrap(),
+                                confirmation = 0u,
+                                param1 = 148f, // AUTOPILOT_VERSION message ID
+                                param2 = 0f,
+                                param3 = 0f,
+                                param4 = 0f,
+                                param5 = 0f,
+                                param6 = 0f,
+                                param7 = 0f
+                            )
+                            try {
+                                connection.trySendUnsignedV2(gcsSystemId, gcsComponentId, autopilotVersionCmd)
+                                Log.i("DroneID", "✓ AUTOPILOT_VERSION request sent to FCU")
+                            } catch (e: Exception) {
+                                Log.e("DroneID", "Failed to request AUTOPILOT_VERSION", e)
+                            }
+
                             // Request spray telemetry capacity parameters
                             delay(500) // Small delay to let message rates stabilize
                             requestSprayCapacityParameters()
@@ -1382,6 +1404,75 @@ class MavlinkTelemetryRepository(
                     }
 
                     _paramValue.emit(paramValue)
+                }
+        }
+
+        // AUTOPILOT_VERSION for drone identification
+        scope.launch {
+            mavFrame
+                .filter { state.value.fcuDetected && it.systemId == fcuSystemId }
+                .map { it.message }
+                .filterIsInstance<AutopilotVersion>()
+                .collect { autopilotVersion ->
+                    try {
+                        // Extract UID - prefer uid2 over uid if uid2 is non-zero
+                        val primaryUid = if (autopilotVersion.uid2.any { it.toInt() != 0 }) {
+                            // Convert uid2 (18 bytes) to hex string
+                            autopilotVersion.uid2.joinToString("") { "%02x".format(it.toInt() and 0xFF) }
+                        } else if (autopilotVersion.uid != 0UL) {
+                            // Convert uid (8 bytes) to hex string
+                            "%016x".format(autopilotVersion.uid)
+                        } else {
+                            null
+                        }
+
+                        // Also store uid2 separately if it exists and is different from uid
+                        val secondaryUid = if (autopilotVersion.uid2.any { it.toInt() != 0 }) {
+                            val uid2Hex = autopilotVersion.uid2.joinToString("") { "%02x".format(it.toInt() and 0xFF) }
+                            val uidHex = "%016x".format(autopilotVersion.uid)
+                            if (uid2Hex != uidHex) uid2Hex else null
+                        } else null
+
+                        // Format firmware version (4 bytes: major.minor.patch.type)
+                        val fwVersion = autopilotVersion.flightSwVersion
+                        val major = (fwVersion shr 24) and 0xFFu
+                        val minor = (fwVersion shr 16) and 0xFFu
+                        val patch = (fwVersion shr 8) and 0xFFu
+                        val fwType = fwVersion and 0xFFu
+                        val formattedFirmware = "$major.$minor.$patch (type: $fwType)"
+
+                        Log.i("DroneID", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+                        Log.i("DroneID", "✅ AUTOPILOT_VERSION received:")
+                        Log.i("DroneID", "  Primary UID: $primaryUid")
+                        if (secondaryUid != null) {
+                            Log.i("DroneID", "  Secondary UID: $secondaryUid")
+                        }
+                        Log.i("DroneID", "  Vendor ID: ${autopilotVersion.vendorId}")
+                        Log.i("DroneID", "  Product ID: ${autopilotVersion.productId}")
+                        Log.i("DroneID", "  Firmware: $formattedFirmware")
+                        Log.i("DroneID", "  Board Version: ${autopilotVersion.boardVersion}")
+                        Log.i("DroneID", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+                        _state.update { state ->
+                            state.copy(
+                                droneUid = primaryUid,
+                                droneUid2 = secondaryUid,
+                                vendorId = autopilotVersion.vendorId.toInt(),
+                                productId = autopilotVersion.productId.toInt(),
+                                firmwareVersion = formattedFirmware,
+                                boardVersion = autopilotVersion.boardVersion.toInt()
+                            )
+                        }
+
+                        // Announce drone ID via TTS
+                        if (primaryUid != null) {
+                            val shortUid = primaryUid.takeLast(8) // Last 8 characters for brevity
+                            sharedViewModel.speak("Drone identified. UID ending in $shortUid")
+                        }
+
+                    } catch (e: Exception) {
+                        Log.e("DroneID", "Error processing AUTOPILOT_VERSION", e)
+                    }
                 }
         }
 

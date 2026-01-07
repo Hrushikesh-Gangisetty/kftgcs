@@ -35,5 +35,8 @@ data class TelemetryEntity(
     val heading: Float?, // in degrees
     val pitchAngle: Float?,
     val rollAngle: Float?,
-    val yawAngle: Float?
+    val yawAngle: Float?,
+    // Drone identification from AUTOPILOT_VERSION message
+    val droneUid: String?, // Primary drone UID
+
 )

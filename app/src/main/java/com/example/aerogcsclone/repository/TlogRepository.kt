@@ -74,7 +74,9 @@ class TlogRepository @Inject constructor(
         heading: Float? = null,
         pitchAngle: Float? = null,
         rollAngle: Float? = null,
-        yawAngle: Float? = null
+        yawAngle: Float? = null,
+        droneUid: String? = null,
+
     ) {
         try {
             val telemetry = TelemetryEntity(
@@ -92,7 +94,9 @@ class TlogRepository @Inject constructor(
                 heading = heading,
                 pitchAngle = pitchAngle,
                 rollAngle = rollAngle,
-                yawAngle = yawAngle
+                yawAngle = yawAngle,
+                droneUid = droneUid,
+
             )
             telemetryDao.insertTelemetry(telemetry)
             // Only log occasionally to avoid spam
