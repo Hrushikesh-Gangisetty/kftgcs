@@ -39,7 +39,7 @@ private val DarkColorScheme = darkColorScheme(
 class MainActivity : ComponentActivity() {
 
     private val hasRequiredPermissions = mutableStateOf(false)
-    private val wsManager = WebSocketManager.getInstance()
+    private val wsManager by lazy { WebSocketManager.getInstance() }
 
     private val requestPermissionsLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -76,8 +76,10 @@ class MainActivity : ComponentActivity() {
             // You can log or handle the chosen renderer here
         }
 
-        // ✅ Connect to WebSocket server for telemetry streaming
-        android.util.Log.e("MAIN_ACTIVITY", "🔌 About to connect WebSocket...")
+        // ✅ WebSocket connection is now managed by mission lifecycle
+        // - Opens when mission starts (SharedViewModel.startMission)
+        // - Closes when mission ends (TelemetryRepository)
+        android.util.Log.i("MAIN_ACTIVITY", "📋 WebSocket will connect when mission starts")
 
         // ✅ Get pilotId and adminId from SessionManager (values from database after login)
         val pilotId = SessionManager.getPilotId(this)
@@ -85,17 +87,18 @@ class MainActivity : ComponentActivity() {
 
         android.util.Log.e("MAIN_ACTIVITY", "📋 SessionManager values: pilotId=$pilotId, adminId=$adminId")
 
-        // ✅ Set the values on WebSocketManager before connecting
+        // ✅ Pre-set the values on WebSocketManager (connection happens on mission start)
         wsManager.pilotId = pilotId
         wsManager.adminId = adminId
+        wsManager.droneUid = "SITL_DRONE_001"  // Default fallback, will be updated when FC sends AUTOPILOT_VERSION
 
-        wsManager.connect()
-        android.util.Log.e("MAIN_ACTIVITY", "✅ WebSocket connect() method called with pilotId=$pilotId, adminId=$adminId")
-
-        // ✅ Throttled telemetry sender - sends every 1 second instead of on every update
+        // ✅ Throttled telemetry sender - sends every 1 second (only when connected)
         Handler(Looper.getMainLooper()).postDelayed(object : Runnable {
             override fun run() {
-                wsManager.sendTelemetry()
+                // Only send telemetry if WebSocket is connected
+                if (wsManager.isConnected) {
+                    wsManager.sendTelemetry()
+                }
                 Handler(Looper.getMainLooper()).postDelayed(this, 1000)
             }
         }, 1000)
@@ -165,6 +168,14 @@ class MainActivity : ComponentActivity() {
                         wsManager.sprayRate = (telemetryState.sprayTelemetry.flowRateLiterPerMin ?: 0f).toDouble()
                         wsManager.flowPulse = telemetryState.sprayTelemetry.rc7Value ?: 0
                         wsManager.tankLevel = (telemetryState.sprayTelemetry.tankLevelPercent ?: 0).toDouble()
+
+                        // 🔥 Drone UID from Flight Controller (AUTOPILOT_VERSION)
+                        telemetryState.droneUid?.let { uid ->
+                            if (wsManager.droneUid != uid) {
+                                wsManager.droneUid = uid
+                                android.util.Log.i("WebSocketTelemetry", "🔥 DroneUID set: $uid")
+                            }
+                        }
 
                         // NOTE: Don't call sendTelemetry() here - throttled sender handles it
                     } else {

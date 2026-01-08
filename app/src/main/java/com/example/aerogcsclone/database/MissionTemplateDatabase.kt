@@ -4,6 +4,8 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import android.content.Context
 import com.example.aerogcsclone.database.tlog.*
 
@@ -18,7 +20,7 @@ import com.example.aerogcsclone.database.tlog.*
         EventEntity::class,
         MapDataEntity::class
     ],
-    version = 4,
+    version = 6,
     exportSchema = false
 )
 @TypeConverters(MissionTemplateTypeConverters::class, TlogTypeConverters::class)
@@ -34,6 +36,27 @@ abstract class MissionTemplateDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: MissionTemplateDatabase? = null
 
+        // Migration from version 4 to 5 (added droneUid to flights table)
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE flights ADD COLUMN droneUid TEXT")
+            }
+        }
+
+        // Migration from version 5 to 6 (no schema change, just version bump)
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // No schema changes needed
+            }
+        }
+
+        // Direct migration from version 4 to 6
+        private val MIGRATION_4_6 = object : Migration(4, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE flights ADD COLUMN droneUid TEXT")
+            }
+        }
+
         fun getDatabase(context: Context): MissionTemplateDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -41,8 +64,8 @@ abstract class MissionTemplateDatabase : RoomDatabase() {
                     MissionTemplateDatabase::class.java,
                     "mission_template_database"
                 )
-                .fallbackToDestructiveMigration()
-                .fallbackToDestructiveMigrationOnDowngrade()
+                .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_4_6)
+                .fallbackToDestructiveMigration()  // Fallback if migration fails
                 .build()
                 INSTANCE = instance
                 instance

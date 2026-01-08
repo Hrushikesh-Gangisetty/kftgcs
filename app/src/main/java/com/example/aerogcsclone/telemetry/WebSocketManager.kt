@@ -54,6 +54,21 @@ class WebSocketManager {
     var adminId: Int = -1  // Will be set from SessionManager
     var pilotId: Int = -1  // Will be set from SessionManager
 
+    // 🔥 Drone UID - Real drone identifier from Flight Controller
+    var droneUid: String = ""  // Set from TelemetryState / FC AUTOPILOT_VERSION
+
+    /**
+     * Resolves the drone UID, providing a fallback for SITL testing
+     * @return Real drone UID if available, otherwise "SITL_DRONE_001" as fallback
+     */
+    private fun resolveDroneUid(): String {
+        return if (droneUid.isBlank()) {
+            "SITL_DRONE_001"   // 🔥 fallback for SITL
+        } else {
+            droneUid          // real FC id
+        }
+    }
+
     // Mission tracking (received from backend)
     var missionId: String? = null
         private set
@@ -137,6 +152,8 @@ class WebSocketManager {
                 put("vehicle_name", "DRONE_01") // MUST match DB
                 put("admin_id", adminId)
                 put("pilot_id", pilotId)
+                // 🔥 REAL DRONE ID from Flight Controller (with SITL fallback)
+                put("drone_uid", resolveDroneUid())
             }
 
             webSocket.send(sessionStart.toString())
@@ -226,10 +243,12 @@ class WebSocketManager {
                 put("type", "telemetry")
                 put("ts", System.currentTimeMillis())
 
-                // ✅ CRITICAL: Include pilot_id, admin_id, and mission_id
+                // ✅ CRITICAL: Include pilot_id, admin_id, mission_id, and drone_uid
                 put("pilot_id", pilotId)
                 put("admin_id", adminId)
                 put("mission_id", missionId)
+                // 🔥 REAL DRONE ID (with SITL fallback)
+                put("drone_uid", resolveDroneUid())
 
                 put("position", JSONObject().apply {
                     put("lat", lat)
@@ -301,6 +320,8 @@ class WebSocketManager {
                 put("type", "mission_status")
                 put("mission_id", missionId)
                 put("status", status)
+                // 🔥 REAL DRONE ID (with SITL fallback)
+                put("drone_uid", resolveDroneUid())
             }
 
             webSocket.send(msg.toString())
@@ -316,6 +337,44 @@ class WebSocketManager {
 
         } catch (e: Exception) {
             Log.e(TAG, "❌ Failed to send mission status", e)
+        }
+    }
+
+    /**
+     * Send mission event to backend
+     * @param eventType Type of event (e.g., "ARM", "DISARM", "TAKEOFF", "LAND", "RTL", etc.)
+     * @param eventStatus Event severity/status (e.g., "INFO", "WARNING", "ERROR", "CRITICAL")
+     * @param description Human-readable description of the event
+     */
+    fun sendMissionEvent(eventType: String, eventStatus: String, description: String) {
+        // Safety checks
+        if (!isConnected) {
+            Log.e(TAG, "⛔ Cannot send mission event — socket not connected")
+            return
+        }
+
+        if (!::webSocket.isInitialized) {
+            Log.e(TAG, "⛔ Cannot send mission event — webSocket not initialized")
+            return
+        }
+
+        try {
+            val msg = JSONObject().apply {
+                put("type", "mission_event")
+                put("event_type", eventType)
+                put("event_status", eventStatus)
+                put("description", description)
+                // 🔥 REAL DRONE ID (with SITL fallback)
+                put("drone_uid", resolveDroneUid())
+                // Include mission_id if available
+                missionId?.let { put("mission_id", it) }
+            }
+
+            webSocket.send(msg.toString())
+            Log.d(TAG, "📤 Sent mission event: type=$eventType, status=$eventStatus, desc=$description, drone_uid=${resolveDroneUid()}")
+
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Failed to send mission event", e)
         }
     }
 

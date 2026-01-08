@@ -915,6 +915,14 @@ class MavlinkTelemetryRepository(
                                             Log.e("TelemetryRepo", "Failed to send ENDED status", e)
                                         }
 
+                                        // 🔥 Disconnect WebSocket when mission ends
+                                        try {
+                                            Log.i("TelemetryRepo", "🔌 Closing WebSocket connection - mission ended")
+                                            WebSocketManager.getInstance().disconnect()
+                                        } catch (e: Exception) {
+                                            Log.e("TelemetryRepo", "Failed to disconnect WebSocket", e)
+                                        }
+
                                         Log.i("TelemetryRepo", "✅ Mission completed - elapsed: ${lastElapsed}s (mode: $lastMode -> $mode)")
                                     } else {
                                         // No meaningful mission - just reset state without triggering completion

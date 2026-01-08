@@ -27,14 +27,15 @@ class TlogRepository @Inject constructor(
 
     suspend fun getActiveFlightOrNull(): FlightEntity? = flightDao.getActiveFlightOrNull()
 
-    suspend fun startFlight(): Long {
-        Log.d(TAG, "📝 Creating new flight entry...")
+    suspend fun startFlight(droneUid: String? = null): Long {
+        Log.d(TAG, "📝 Creating new flight entry... (droneUid: $droneUid)")
         val flight = FlightEntity(
             startTime = System.currentTimeMillis(),
-            isCompleted = false
+            isCompleted = false,
+            droneUid = droneUid
         )
         val flightId = flightDao.insertFlight(flight)
-        Log.i(TAG, "✅ Flight entry created in database - ID: $flightId")
+        Log.i(TAG, "✅ Flight entry created in database - ID: $flightId, DroneUID: $droneUid")
         return flightId
     }
 

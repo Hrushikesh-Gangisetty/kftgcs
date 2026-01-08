@@ -19,5 +19,6 @@ data class FlightEntity(
     val maxSpeed: Float? = null,
     val totalDistance: Float? = null,
     val isCompleted: Boolean = false,
+    val droneUid: String? = null, // Vehicle/Drone unique identifier
     val createdAt: Long = System.currentTimeMillis()
 )

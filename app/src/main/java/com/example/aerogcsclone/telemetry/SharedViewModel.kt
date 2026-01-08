@@ -1799,6 +1799,17 @@ class SharedViewModel : ViewModel() {
                 if (result) {
                     Log.i("SharedVM", "✓ Mission start acknowledged by FCU")
 
+                    // 🔥 Connect WebSocket when mission starts
+                    try {
+                        val wsManager = WebSocketManager.getInstance()
+                        if (!wsManager.isConnected) {
+                            Log.i("SharedVM", "🔌 Opening WebSocket connection for mission...")
+                            wsManager.connect()
+                        }
+                    } catch (e: Exception) {
+                        Log.e("SharedVM", "Failed to connect WebSocket", e)
+                    }
+
                     // ✅ Send mission status STARTED to backend (crash-safe)
                     try {
                         WebSocketManager.getInstance().sendMissionStatus(WebSocketManager.MISSION_STATUS_STARTED)
