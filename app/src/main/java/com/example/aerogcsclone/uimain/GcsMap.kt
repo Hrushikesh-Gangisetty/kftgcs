@@ -877,8 +877,41 @@ fun GcsMap(
             }
         }
 
+        // Helper function to check if a line segment intersects with an obstacle polygon
+        fun lineIntersectsObstacle(start: LatLng, end: LatLng, obstacle: List<LatLng>): Boolean {
+            if (obstacle.size < 3) return false
+
+            // Sample points along the line and check if any are inside the obstacle
+            val numSamples = 20
+            for (i in 1 until numSamples) {
+                val t = i.toDouble() / numSamples
+                val lat = start.latitude + t * (end.latitude - start.latitude)
+                val lng = start.longitude + t * (end.longitude - start.longitude)
+
+                // Simple point-in-polygon test (ray casting)
+                var inside = false
+                var j = obstacle.size - 1
+                for (k in obstacle.indices) {
+                    val xi = obstacle[k].longitude
+                    val yi = obstacle[k].latitude
+                    val xj = obstacle[j].longitude
+                    val yj = obstacle[j].latitude
+
+                    val intersect = ((yi > lat) != (yj > lat)) &&
+                            (lng < (xj - xi) * (lat - yi) / (yj - yi) + xi)
+
+                    if (intersect) inside = !inside
+                    j = k
+                }
+
+                if (inside) return true
+            }
+            return false
+        }
+
         // Draw connecting lines between grid waypoints (turn lines between survey lines)
         // These connect the end of one survey line to the start of the next
+        // Skip lines that would cross obstacles
         if (gridWaypoints.size >= 2 && !splitPlanMode) {
             for (i in 0 until gridWaypoints.size - 1) {
                 // Connect consecutive waypoints
@@ -888,11 +921,19 @@ fun GcsMap(
                 // Survey lines are between even-odd pairs (0-1, 2-3, 4-5, etc.)
                 // Turn lines are between odd-even pairs (1-2, 3-4, 5-6, etc.)
                 if (i % 2 == 1) { // Turn line (connecting line between survey lines)
-                    Polyline(
-                        points = listOf(start, end),
-                        width = 3f,
-                        color = Color.Green.copy(alpha = 0.7f)
-                    )
+                    // Check if this turn line crosses any obstacle
+                    val crossesObstacle = obstacles.any { obstacle ->
+                        lineIntersectsObstacle(start, end, obstacle)
+                    }
+
+                    if (!crossesObstacle) {
+                        Polyline(
+                            points = listOf(start, end),
+                            width = 3f,
+                            color = Color.Green.copy(alpha = 0.7f)
+                        )
+                    }
+                    // If it crosses an obstacle, don't draw the line (drone will fly around)
                 }
             }
         }
@@ -916,11 +957,18 @@ fun GcsMap(
                     val end = splitGridWaypoints[i + 1]
                     // Turn lines are between odd-even pairs (1-2, 3-4, 5-6, etc.)
                     if (i % 2 == 1) {
-                        Polyline(
-                            points = listOf(start, end),
-                            width = 3f,
-                            color = Color.Yellow.copy(alpha = 0.7f)
-                        )
+                        // Check if this turn line crosses any obstacle
+                        val crossesObstacle = obstacles.any { obstacle ->
+                            lineIntersectsObstacle(start, end, obstacle)
+                        }
+
+                        if (!crossesObstacle) {
+                            Polyline(
+                                points = listOf(start, end),
+                                width = 3f,
+                                color = Color.Yellow.copy(alpha = 0.7f)
+                            )
+                        }
                     }
                 }
             }

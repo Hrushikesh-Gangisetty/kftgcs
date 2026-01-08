@@ -651,6 +651,66 @@ class SharedViewModel : ViewModel() {
     val missionUploaded: StateFlow<Boolean> = _missionUploaded.asStateFlow()
     var lastUploadedCount by mutableStateOf(0)
 
+    // --- Current Mission Names (for tracking which template/mission is active) ---
+    private val _currentProjectName = MutableStateFlow("")
+    val currentProjectName: StateFlow<String> = _currentProjectName.asStateFlow()
+
+    private val _currentPlotName = MutableStateFlow("")
+    val currentPlotName: StateFlow<String> = _currentPlotName.asStateFlow()
+
+    // --- Mission Completion Dialog State ---
+    private val _showMissionCompletionDialog = MutableStateFlow(false)
+    val showMissionCompletionDialog: StateFlow<Boolean> = _showMissionCompletionDialog.asStateFlow()
+
+    // Store mission completion data for the dialog
+    data class MissionCompletionData(
+        val totalTime: String = "",
+        val totalDistance: String = "",
+        val consumedLitres: String = ""
+    )
+
+    private val _missionCompletionData = MutableStateFlow(MissionCompletionData())
+    val missionCompletionData: StateFlow<MissionCompletionData> = _missionCompletionData.asStateFlow()
+
+    /**
+     * Set the current mission names (project and plot)
+     * Called when a template is loaded or mission is created
+     */
+    fun setCurrentMissionNames(projectName: String, plotName: String) {
+        _currentProjectName.value = projectName
+        _currentPlotName.value = plotName
+        Log.i("SharedVM", "Current mission names set - Project: $projectName, Plot: $plotName")
+    }
+
+    /**
+     * Show the mission completion dialog with the given data
+     */
+    fun showMissionCompletionDialog(totalTime: String, totalDistance: String, consumedLitres: String) {
+        _missionCompletionData.value = MissionCompletionData(totalTime, totalDistance, consumedLitres)
+        _showMissionCompletionDialog.value = true
+        Log.i("SharedVM", "Mission completion dialog triggered - Time: $totalTime, Distance: $totalDistance, Litres: $consumedLitres")
+    }
+
+    /**
+     * Dismiss the mission completion dialog
+     */
+    fun dismissMissionCompletionDialog() {
+        _showMissionCompletionDialog.value = false
+        Log.i("SharedVM", "Mission completion dialog dismissed")
+    }
+
+    /**
+     * Save the mission completion data with project and plot names
+     * Called when user clicks OK on the completion dialog
+     */
+    fun saveMissionCompletionData(projectName: String, plotName: String) {
+        _currentProjectName.value = projectName
+        _currentPlotName.value = plotName
+        _showMissionCompletionDialog.value = false
+        Log.i("SharedVM", "Mission completion data saved - Project: $projectName, Plot: $plotName")
+        // The actual saving to database should be handled by TlogViewModel or MissionTemplateViewModel
+    }
+
     private val _uploadedWaypoints = MutableStateFlow<List<LatLng>>(emptyList())
     val uploadedWaypoints: StateFlow<List<LatLng>> = _uploadedWaypoints.asStateFlow()
 

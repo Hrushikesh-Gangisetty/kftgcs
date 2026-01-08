@@ -479,6 +479,9 @@ fun PlanScreen(
             points.clear()
             waypoints.clear()
 
+            // Set current mission names from the loaded template
+            telemetryViewModel.setCurrentMissionNames(template.projectName, template.plotName)
+
             if (template.isGridSurvey && template.gridParameters != null) {
                 isGridSurveyMode = true
                 showGridControls = true
@@ -756,6 +759,10 @@ fun PlanScreen(
                         obstacles = obstacles.toMutableList().apply {
                             this[obstacleIndex] = updatedObstacle
                         }
+                        // Regenerate grid when obstacle points are dragged
+                        if (isGridGenerated && surveyPolygon.size >= 3) {
+                            regenerateGrid()
+                        }
                     }
                 },
                 // Enable obstacle editing in plan screen
@@ -837,7 +844,8 @@ fun PlanScreen(
 
 
             // Obstacle info card (when obstacles exist or in adding mode)
-            if ((obstacles.isNotEmpty() || isAddingObstacle) && isGridSurveyMode && !isGridGenerated) {
+            // Show in plot definition mode OR when obstacles exist after grid generation (for editing)
+            if ((obstacles.isNotEmpty() || isAddingObstacle) && isGridSurveyMode) {
                 Card(
                     modifier = Modifier
                         .align(Alignment.BottomStart)
@@ -864,6 +872,14 @@ fun PlanScreen(
                                 style = MaterialTheme.typography.bodySmall,
                                 color = Color.White.copy(alpha = 0.8f)
                             )
+                            // Show editing hint after grid generation
+                            if (isGridGenerated && !isPlanSaved) {
+                                Text(
+                                    text = "💡 Tap X marker to select, then drag corners to edit",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color.Yellow
+                                )
+                            }
                         }
 
                         if (isAddingObstacle) {
@@ -1573,9 +1589,9 @@ fun PlanScreen(
                         Icon(Icons.Default.Map, contentDescription = "Toggle Map Type")
                     }
 
-                    // Obstacle Avoidance button - Available in plot definition mode (before grid generation)
-                    // Not available after grid is generated
-                    if (isGridSurveyMode && !isGridGenerated) {
+                    // Obstacle Avoidance button - Available in grid survey mode
+                    // Allows adding and editing obstacles before and after grid generation
+                    if (isGridSurveyMode) {
                         FloatingActionButton(
                             onClick = {
                                 if (isPlanSaved) {
@@ -2519,6 +2535,9 @@ fun PlanScreen(
                             isGridSurvey = isGridSurveyMode,
                             gridParameters = currentGridParams
                         )
+
+                        // Set current mission names for the mission completion dialog
+                        telemetryViewModel.setCurrentMissionNames(projectName, plotName)
                     },
                     isLoading = missionTemplateUiState.isLoading
                 )

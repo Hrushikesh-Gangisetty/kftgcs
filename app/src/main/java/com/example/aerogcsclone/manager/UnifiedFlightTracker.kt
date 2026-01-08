@@ -418,6 +418,14 @@ class UnifiedFlightTracker(
             )
         )
 
+        // Show mission completion dialog with time, distance, and consumed litres
+        val consumedLitresStr = finalConsumedLitres?.let { "%.2f L".format(it) } ?: "N/A"
+        sharedViewModel.showMissionCompletionDialog(
+            totalTime = formatTime(finalTime),
+            totalDistance = formatDistance(finalDistance),
+            consumedLitres = consumedLitresStr
+        )
+
         // CRITICAL: Update shared view model with FINAL values BEFORE reset
         // This ensures the UI can capture the values
         sharedViewModel.updateFlightState(

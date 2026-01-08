@@ -11,6 +11,7 @@ data class GridWaypoint(
     val speed: Float? = null,
     val isLineStart: Boolean = false,
     val isLineEnd: Boolean = false,
+    val isTransition: Boolean = false,  // True for waypoints that route around obstacles between zones
     val lineIndex: Int = 0
 )
 

@@ -32,6 +32,7 @@ import com.example.aerogcsclone.telemetry.SharedViewModel
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.text.style.TextOverflow
 import com.example.aerogcsclone.utils.AppStrings
+import com.example.aerogcsclone.ui.components.MissionCompletionDialog
 import kotlinx.coroutines.flow.debounce
 
 @Composable
@@ -119,6 +120,12 @@ fun MainPage(
     }
 
     var resumeProgressMessage by remember { mutableStateOf("Initializing...") }
+
+    // Mission Completion Dialog state
+    val showMissionCompletionDialog by telemetryViewModel.showMissionCompletionDialog.collectAsState()
+    val missionCompletionData by telemetryViewModel.missionCompletionData.collectAsState()
+    val currentProjectName by telemetryViewModel.currentProjectName.collectAsState()
+    val currentPlotName by telemetryViewModel.currentPlotName.collectAsState()
 
     // Debug: Monitor dialog state changes
     LaunchedEffect(showResumeWarningDialog) {
@@ -248,6 +255,24 @@ fun MainPage(
                 lastHandledCompletionTime = currentCompletionTime
                 // No popup - notification already shown by UnifiedFlightTracker
             }
+        }
+
+        // Mission Completion Dialog - shows when mission ends with project/plot name inputs
+        if (showMissionCompletionDialog) {
+            MissionCompletionDialog(
+                totalTime = missionCompletionData.totalTime,
+                totalDistance = missionCompletionData.totalDistance,
+                consumedLitres = missionCompletionData.consumedLitres,
+                initialProjectName = currentProjectName,
+                initialPlotName = currentPlotName,
+                onDismiss = {
+                    telemetryViewModel.dismissMissionCompletionDialog()
+                },
+                onSave = { projectName, plotName ->
+                    telemetryViewModel.saveMissionCompletionData(projectName, plotName)
+                    Toast.makeText(context, "Mission data saved", Toast.LENGTH_SHORT).show()
+                }
+            )
         }
 
 

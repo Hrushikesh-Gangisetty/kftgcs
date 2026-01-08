@@ -140,6 +140,7 @@ class GridGenerator {
         // Strategy based on reference app:
         // 1. Complete ALL lines on one side of obstacle (Zone 0) with boustrophedon
         // 2. Transition at the TOP or BOTTOM edge of obstacle (where no grid lines exist)
+        //    ADD: Insert transition waypoints along obstacle boundary to avoid diagonal crossing
         // 3. Complete ALL lines on the other side (Zone 1) with boustrophedon
         //
         // Key: Zone 0 ends at the LAST line (highest index), Zone 1 STARTS at the LAST line
@@ -152,6 +153,9 @@ class GridGenerator {
         if (hasObstacles) {
             // Find max relative position (number of obstacle crossings)
             val maxRelativePosition = allSegments.maxOfOrNull { it.relativePosition } ?: 0
+
+            // Track the last waypoint added for zone transitions
+            var lastZoneEndPoint: LatLng? = null
 
             // Process each "zone" separately
             for (zone in 0..maxRelativePosition) {
@@ -170,6 +174,9 @@ class GridGenerator {
                 } else {
                     lineIndicesInZone.sortedDescending()  // Descending: N, N-1, ... 1
                 }
+
+                // Determine the first point of this zone for transition calculation
+                var firstZoneStartPoint: LatLng? = null
 
                 // Process lines in this zone with boustrophedon pattern
                 for ((zoneLineNum, lineIdx) in orderedLineIndices.withIndex()) {
@@ -192,6 +199,37 @@ class GridGenerator {
                             Pair(segment.start, segment.end)
                         }
 
+                        // Capture first point of the zone for transition routing
+                        if (firstZoneStartPoint == null) {
+                            firstZoneStartPoint = segStart
+                        }
+
+                        // ===== ADD TRANSITION WAYPOINTS AROUND OBSTACLES =====
+                        // If this is the first segment of a new zone (zone > 0) and we have a last endpoint from previous zone,
+                        // add transition waypoints that go around the obstacle boundary instead of direct diagonal flight
+                        if (zone > 0 && zoneLineNum == 0 && waypoints.isNotEmpty()) {
+                            lastZoneEndPoint?.let { prevEndPoint ->
+                                val transitionWaypoints = calculateTransitionWaypointsAroundObstacle(
+                                    prevEndPoint,
+                                    segStart,
+                                    expandedObstacles
+                                )
+
+                                // Add transition waypoints (excluding start and end which are already handled)
+                                for (transitionPoint in transitionWaypoints) {
+                                    waypoints.add(GridWaypoint(
+                                        position = transitionPoint,
+                                        altitude = params.altitude,
+                                        speed = if (params.includeSpeedCommands) params.speed else null,
+                                        isLineStart = false,
+                                        isLineEnd = false,
+                                        isTransition = true,  // Mark as transition waypoint
+                                        lineIndex = gridLines.size  // Use next line index
+                                    ))
+                                }
+                            }
+                        }
+
                         // Add the grid line for visualization
                         gridLines.add(Pair(segStart, segEnd))
 
@@ -211,6 +249,9 @@ class GridGenerator {
                             isLineEnd = true,
                             lineIndex = gridLines.size - 1
                         ))
+
+                        // Track the last endpoint for zone transition
+                        lastZoneEndPoint = segEnd
                     }
                 }
             }
@@ -628,5 +669,165 @@ class GridGenerator {
         if (area <= 0) return 0f
         val estimatedCoveredArea = area * (1.0 - lineSpacing / 100.0)
         return (estimatedCoveredArea / area * 100).coerceIn(0.0, 100.0).toFloat()
+    }
+
+    /**
+     * Calculate transition waypoints around obstacle boundaries.
+     * This ensures the drone routes around the obstacle edge instead of flying diagonally across it.
+     *
+     * Strategy:
+     * 1. Find which obstacle lies between start and end points
+     * 2. Determine the closest edge of that obstacle to both points
+     * 3. Generate waypoints along that edge (either top or bottom)
+     *
+     * @param start The ending point of Zone 0 (last point before transition)
+     * @param end The starting point of Zone 1 (first point after transition)
+     * @param expandedObstacles The obstacle polygons expanded by buffer
+     * @return List of intermediate waypoints to follow the obstacle boundary
+     */
+    private fun calculateTransitionWaypointsAroundObstacle(
+        start: LatLng,
+        end: LatLng,
+        expandedObstacles: List<List<LatLng>>
+    ): List<LatLng> {
+        if (expandedObstacles.isEmpty()) return emptyList()
+
+        val transitionPoints = mutableListOf<LatLng>()
+
+        // Find which obstacle is between start and end
+        var relevantObstacle: List<LatLng>? = null
+        for (obstacle in expandedObstacles) {
+            if (obstacle.size < 3) continue
+            // Check if direct path from start to end would cross this obstacle
+            if (lineIntersectsObstacle(start, end, obstacle)) {
+                relevantObstacle = obstacle
+                break
+            }
+        }
+
+        if (relevantObstacle == null || relevantObstacle.size < 3) {
+            return emptyList()
+        }
+
+        // Determine if we should go around the top or bottom of the obstacle
+        // Calculate centroid of obstacle
+        val obsCentroidLat = relevantObstacle.map { it.latitude }.average()
+
+        // Determine the "direction" of the transition (up or down based on latitude)
+        // If start is below end (going up), we should go around the top
+        // If start is above end (going down), we should go around the bottom
+        val goingUp = start.latitude < end.latitude
+
+        // Sort obstacle points by latitude to find top and bottom vertices
+        val sortedByLat = relevantObstacle.sortedBy { it.latitude }
+
+        // Find corner points to route around
+        val bottomPoints = sortedByLat.take(2).sortedBy { it.longitude }
+        val topPoints = sortedByLat.takeLast(2).sortedBy { it.longitude }
+
+        // Choose route based on which edge is closest to our start/end points
+        // and which direction we're transitioning
+        val startToObsCenterLat = obsCentroidLat - start.latitude
+
+        // Determine which edge to follow (top or bottom)
+        val useTopEdge = if (goingUp) {
+            // Going up - prefer top edge if start is closer to bottom
+            startToObsCenterLat > 0
+        } else {
+            // Going down - prefer bottom edge if start is closer to top
+            startToObsCenterLat < 0
+        }
+
+        val edgePoints = if (useTopEdge) topPoints else bottomPoints
+
+        // Find the closest point on the edge to start
+        val closestToStart = edgePoints.minByOrNull {
+            GridUtils.haversineDistance(start, it)
+        } ?: return emptyList()
+
+        // Find the closest point on the edge to end
+        val closestToEnd = edgePoints.minByOrNull {
+            GridUtils.haversineDistance(end, it)
+        } ?: return emptyList()
+
+        // Add edge points in order from start to end
+        if (closestToStart != closestToEnd) {
+            // Add both corner points
+            val distStartToFirst = GridUtils.haversineDistance(start, edgePoints[0])
+            val distStartToSecond = GridUtils.haversineDistance(start, edgePoints[1])
+
+            if (distStartToFirst < distStartToSecond) {
+                transitionPoints.add(edgePoints[0])
+                transitionPoints.add(edgePoints[1])
+            } else {
+                transitionPoints.add(edgePoints[1])
+                transitionPoints.add(edgePoints[0])
+            }
+        } else {
+            // Just add the single closest point
+            transitionPoints.add(closestToStart)
+        }
+
+        return transitionPoints
+    }
+
+    /**
+     * Check if a line from start to end intersects with an obstacle polygon
+     */
+    private fun lineIntersectsObstacle(start: LatLng, end: LatLng, obstacle: List<LatLng>): Boolean {
+        if (obstacle.size < 3) return false
+
+        // Check if the line passes through the obstacle
+        val numSamples = 20
+        for (i in 1 until numSamples) {
+            val t = i.toDouble() / numSamples
+            val lat = start.latitude + t * (end.latitude - start.latitude)
+            val lng = start.longitude + t * (end.longitude - start.longitude)
+            val point = LatLng(lat, lng)
+
+            if (isPointInsidePolygonWinding(point, obstacle) ||
+                isPointInPolygonRobust(point, obstacle)) {
+                return true
+            }
+        }
+
+        // Also check if line segment intersects any edge of the polygon
+        for (i in obstacle.indices) {
+            val p1 = obstacle[i]
+            val p2 = obstacle[(i + 1) % obstacle.size]
+            if (lineSegmentsIntersect(start, end, p1, p2)) {
+                return true
+            }
+        }
+
+        return false
+    }
+
+    /**
+     * Check if two line segments intersect
+     */
+    private fun lineSegmentsIntersect(
+        a1: LatLng, a2: LatLng,
+        b1: LatLng, b2: LatLng
+    ): Boolean {
+        val d1 = direction(b1, b2, a1)
+        val d2 = direction(b1, b2, a2)
+        val d3 = direction(a1, a2, b1)
+        val d4 = direction(a1, a2, b2)
+
+        if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
+            ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))) {
+            return true
+        }
+
+        return false
+    }
+
+    /**
+     * Calculate the cross product direction
+     */
+    private fun direction(pi: LatLng, pj: LatLng, pk: LatLng): Double {
+        return (pk.longitude - pi.longitude) * (pj.latitude - pi.latitude) -
+               (pj.longitude - pi.longitude) * (pk.latitude - pi.latitude)
     }
 }

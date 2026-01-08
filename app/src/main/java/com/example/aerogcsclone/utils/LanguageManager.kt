@@ -108,6 +108,8 @@ object AppStrings {
     val totalTimeTaken get() = getString("Total time taken", "మొత్తం సమయం")
     val totalDistanceCovered get() = getString("Total distance covered", "మొత్తం దూరం")
     val liquidConsumed get() = getString("Liquid consumed", "వినియోగించిన ద్రవం")
+    val totalTime get() = getString("Total Time", "మొత్తం సమయం")
+    val totalDistance get() = getString("Total Distance", "మొత్తం దూరం")
 
     // NEW: Split Plan Dialog
     val yes get() = getString("Yes", "అవును")

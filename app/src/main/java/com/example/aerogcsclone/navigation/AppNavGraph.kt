@@ -196,6 +196,8 @@ fun AppNavGraph(navController: NavHostController) {
                 templates = templates,
                 onLoadTemplate = { template ->
                     missionTemplateViewModel.loadTemplate(template.id)
+                    // Set current mission names for the mission completion dialog
+                    sharedViewModel.setCurrentMissionNames(template.projectName, template.plotName)
                     navController.navigate(Screen.Plan.route)
                 },
                 onDeleteTemplate = { template ->
