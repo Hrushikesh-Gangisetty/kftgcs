@@ -411,7 +411,6 @@ fun GcsMap(
     // Markers with text labels for grid waypoints
     val startMarker = remember { createMarkerWithText("S", android.graphics.Color.GREEN) }
     val endMarker = remember { createMarkerWithText("E", android.graphics.Color.RED) }
-    val obstacleXMarker = remember { createMarkerWithText("X", android.graphics.Color.RED) } // For obstacle centroid
     val resumeMarker = remember { createSmallResumeMarker() } // Small green "R" for resume point
     val rcMarker = remember { createRCMarker() } // RC marker for phone GPS location
 
@@ -593,8 +592,9 @@ fun GcsMap(
                     )
                 }
 
-                // Add clickable/draggable markers at obstacle vertices when selected
-                if (selectedObstacleIndex == obstacleIndex) {
+                // Add clickable/draggable markers at obstacle vertices when editing is enabled
+                // Always show draggable vertex markers for all obstacles (not just selected) when obstacleEditingEnabled is true
+                if (obstacleEditingEnabled) {
                     obstaclePoints.forEachIndexed { pointIndex, point ->
                         key("obstacle_${obstacleIndex}_${pointIndex}") {
                             val markerState = rememberMarkerState(
@@ -602,43 +602,43 @@ fun GcsMap(
                                 position = point
                             )
 
-                            LaunchedEffect(markerState.position) {
+                            // Force update marker position when source point changes (from external update)
+                            LaunchedEffect(point) {
                                 if (markerState.position != point) {
-                                    onObstaclePointDrag(obstacleIndex, pointIndex, markerState.position)
+                                    markerState.position = point
                                 }
+                            }
+
+                            LaunchedEffect(markerState.position) {
+                                // Only trigger callback if position actually differs from source
+                                val newPos = markerState.position
+                                val hasMoved = kotlin.math.abs(newPos.latitude - point.latitude) > 0.0000001 ||
+                                              kotlin.math.abs(newPos.longitude - point.longitude) > 0.0000001
+                                if (hasMoved) {
+                                    onObstaclePointDrag(obstacleIndex, pointIndex, newPos)
+                                }
+                            }
+
+                            // Use different icon for selected obstacle vertices
+                            val markerIcon = if (selectedObstacleIndex == obstacleIndex) {
+                                mediumYellowMarker // Selected obstacle - Yellow
+                            } else {
+                                mediumRedMarker // Default - Red for obstacles
                             }
 
                             Marker(
                                 state = markerState,
                                 title = "Obs${obstacleIndex + 1}-P${pointIndex + 1}",
-                                icon = mediumRedMarker,
+                                icon = markerIcon,
                                 anchor = Offset(0.5f, 0.5f),
                                 draggable = true,
+                                zIndex = if (selectedObstacleIndex == obstacleIndex) 12f else 8f, // Selected obstacles on top
                                 onClick = {
                                     onObstacleClick(obstacleIndex)
                                     true
                                 }
                             )
                         }
-                    }
-                } else {
-                    // Show X marker only when obstacle editing is enabled
-                    if (obstacleEditingEnabled) {
-                        // Show a single click marker at centroid when not selected
-                        val centroidLat = obstaclePoints.map { it.latitude }.average()
-                        val centroidLon = obstaclePoints.map { it.longitude }.average()
-                        val centroid = LatLng(centroidLat, centroidLon)
-
-                        Marker(
-                            state = MarkerState(position = centroid),
-                            title = "Obstacle ${obstacleIndex + 1}",
-                            icon = obstacleXMarker,
-                            anchor = Offset(0.5f, 0.5f),
-                            onClick = {
-                                onObstacleClick(obstacleIndex)
-                                true
-                            }
-                        )
                     }
                 }
             }
