@@ -137,14 +137,19 @@ class GridGenerator {
         }
 
         // ===== IMPROVED OBSTACLE-AWARE ORDERING =====
-        // Strategy based on reference app:
-        // 1. Complete ALL lines on one side of obstacle (Zone 0) with boustrophedon
-        // 2. Transition at the TOP or BOTTOM edge of obstacle (where no grid lines exist)
-        //    ADD: Insert transition waypoints along obstacle boundary to avoid diagonal crossing
-        // 3. Complete ALL lines on the other side (Zone 1) with boustrophedon
         //
-        // Key: Zone 0 ends at the LAST line (highest index), Zone 1 STARTS at the LAST line
-        // This way transition happens at the edge, not crossing through middle lines
+        // PROBLEM: When transitioning between zones (above/below obstacle), diagonal flight
+        // overlaps already-sprayed lines, causing crop damage.
+        //
+        // SOLUTION (based on reference image):
+        // 1. Spray Zone 0 (above obstacle) with normal boustrophedon
+        // 2. End Zone 0 at a point NEAR the obstacle edge
+        // 3. Transition along the obstacle boundary (vertical path along edge, no diagonal)
+        // 4. Spray Zone 1 (below obstacle) starting from the same side where Zone 0 ended
+        // 5. Zone 1 uses REVERSED line order so the transition is a short vertical move
+        //
+        // Key insight: The transition should be a vertical move along the obstacle edge,
+        // not a diagonal flight across already-sprayed lines.
 
         // Check if we have actual split segments (obstacles caused line splits)
         val hasMultipleSegmentsPerLine = allSegments.groupBy { it.lineIndex }.any { it.value.size > 1 }
@@ -165,25 +170,35 @@ class GridGenerator {
                 // Get unique line indices in this zone
                 val lineIndicesInZone = zoneSegments.map { it.lineIndex }.distinct()
 
-                // CRITICAL: Both zones process in the SAME direction (ascending)
-                // But Zone 1 should start from where Zone 0 ended
-                // Zone 0: process 1->2->3->...->N (ends at line N, top of field)
-                // Zone 1: process N->N-1->...->1 (starts at line N, goes down)
+                // ===== KEY FIX: Zone ordering for smooth transitions =====
+                // Zone 0: Process lines in ascending order (1, 2, 3, ... N)
+                //         Ends at line N (highest index), which is closest to one edge of obstacle
+                // Zone 1: Process lines in DESCENDING order starting from N (N, N-1, N-2, ... 1)
+                //         This ensures the transition from Zone 0 to Zone 1 is a short move
+                //         along the obstacle boundary, not a diagonal across sprayed lines
                 val orderedLineIndices = if (zone == 0) {
                     lineIndicesInZone.sorted()  // Ascending: 1, 2, 3, ... N
                 } else {
+                    // For subsequent zones, start from where Zone 0 ended
+                    // and process in descending order
                     lineIndicesInZone.sortedDescending()  // Descending: N, N-1, ... 1
                 }
 
-                // Determine the first point of this zone for transition calculation
-                var firstZoneStartPoint: LatLng? = null
+                // Track starting direction to ensure proper boustrophedon within zone
+                // For Zone 0: even lines go left-to-right, odd lines go right-to-left
+                // For Zone 1: We continue the boustrophedon pattern from where we left off
+                val zoneStartingLineNum = if (zone == 0) 0 else {
+                    // For zone 1+, we want to continue seamlessly
+                    // If zone 0 ended going in one direction, zone 1 should start going the other way
+                    1  // Start with reversed direction for smooth transition
+                }
 
                 // Process lines in this zone with boustrophedon pattern
                 for ((zoneLineNum, lineIdx) in orderedLineIndices.withIndex()) {
                     val lineSegments = zoneSegments.filter { it.lineIndex == lineIdx }
 
                     // Alternate direction based on zone-local line number for boustrophedon
-                    val reverseDirection = zoneLineNum % 2 == 1
+                    val reverseDirection = (zoneStartingLineNum + zoneLineNum) % 2 == 1
 
                     // Sort segments by position along the line
                     val sortedSegments = lineSegments.sortedBy { seg ->
@@ -199,34 +214,28 @@ class GridGenerator {
                             Pair(segment.start, segment.end)
                         }
 
-                        // Capture first point of the zone for transition routing
-                        if (firstZoneStartPoint == null) {
-                            firstZoneStartPoint = segStart
-                        }
-
                         // ===== ADD TRANSITION WAYPOINTS AROUND OBSTACLES =====
-                        // If this is the first segment of a new zone (zone > 0) and we have a last endpoint from previous zone,
-                        // add transition waypoints that go around the obstacle boundary instead of direct diagonal flight
-                        if (zone > 0 && zoneLineNum == 0 && waypoints.isNotEmpty()) {
-                            lastZoneEndPoint?.let { prevEndPoint ->
-                                val transitionWaypoints = calculateTransitionWaypointsAroundObstacle(
-                                    prevEndPoint,
-                                    segStart,
-                                    expandedObstacles
-                                )
+                        // When transitioning between zones, add waypoints along obstacle boundary
+                        // to ensure the drone moves vertically along the obstacle edge, not diagonally
+                        if (zone > 0 && zoneLineNum == 0 && waypoints.isNotEmpty() && lastZoneEndPoint != null) {
+                            val transitionWaypoints = calculateBoundaryTransitionPath(
+                                lastZoneEndPoint,
+                                segStart,
+                                expandedObstacles,
+                                originalObstacles
+                            )
 
-                                // Add transition waypoints (excluding start and end which are already handled)
-                                for (transitionPoint in transitionWaypoints) {
-                                    waypoints.add(GridWaypoint(
-                                        position = transitionPoint,
-                                        altitude = params.altitude,
-                                        speed = if (params.includeSpeedCommands) params.speed else null,
-                                        isLineStart = false,
-                                        isLineEnd = false,
-                                        isTransition = true,  // Mark as transition waypoint
-                                        lineIndex = gridLines.size  // Use next line index
-                                    ))
-                                }
+                            // Add transition waypoints (these follow the obstacle boundary)
+                            for (transitionPoint in transitionWaypoints) {
+                                waypoints.add(GridWaypoint(
+                                    position = transitionPoint,
+                                    altitude = params.altitude,
+                                    speed = if (params.includeSpeedCommands) params.speed else null,
+                                    isLineStart = false,
+                                    isLineEnd = false,
+                                    isTransition = true,  // Mark as transition waypoint
+                                    lineIndex = gridLines.size  // Use next line index
+                                ))
                             }
                         }
 
@@ -829,5 +838,97 @@ class GridGenerator {
     private fun direction(pi: LatLng, pj: LatLng, pk: LatLng): Double {
         return (pk.longitude - pi.longitude) * (pj.latitude - pi.latitude) -
                (pj.longitude - pi.longitude) * (pk.latitude - pi.latitude)
+    }
+
+    /**
+     * Calculate boundary transition path for moving from one zone to another.
+     *
+     * This creates waypoints that follow the obstacle EDGE vertically,
+     * preventing diagonal flight paths that would cross already-sprayed lines.
+     *
+     * Strategy (based on reference image):
+     * 1. Find which obstacle lies between start and end points
+     * 2. Determine the closest edge of the obstacle (left or right side)
+     * 3. Create waypoints that move VERTICALLY along that edge
+     * 4. This ensures the drone doesn't fly diagonally across sprayed lines
+     *
+     * @param start The ending point of previous zone (last waypoint before transition)
+     * @param end The starting point of next zone (first waypoint after transition)
+     * @param expandedObstacles The obstacle polygons expanded by buffer
+     * @param originalObstacles The original obstacle polygons (without buffer)
+     * @return List of intermediate waypoints that follow the obstacle boundary
+     */
+    private fun calculateBoundaryTransitionPath(
+        start: LatLng,
+        end: LatLng,
+        expandedObstacles: List<List<LatLng>>,
+        @Suppress("UNUSED_PARAMETER") originalObstacles: List<List<LatLng>>
+    ): List<LatLng> {
+        if (expandedObstacles.isEmpty()) return emptyList()
+
+        val transitionPoints = mutableListOf<LatLng>()
+
+        // Find which obstacle is between start and end
+        var relevantObstacle: List<LatLng>? = null
+        for (obstacle in expandedObstacles) {
+            if (obstacle.size < 3) continue
+            // Check if direct path from start to end would cross this obstacle
+            if (lineIntersectsObstacle(start, end, obstacle)) {
+                relevantObstacle = obstacle
+                break
+            }
+        }
+
+        if (relevantObstacle == null || relevantObstacle.size < 3) {
+            return emptyList()
+        }
+
+        // Calculate obstacle bounding box
+        val minLon = relevantObstacle.minOf { it.longitude }
+        val maxLon = relevantObstacle.maxOf { it.longitude }
+        val centerLon = (minLon + maxLon) / 2
+
+        // Determine which SIDE of the obstacle to follow (left or right edge)
+        // Choose the side closest to both start and end points
+        val startLon = start.longitude
+        val endLon = end.longitude
+        val avgLon = (startLon + endLon) / 2
+
+        // If average longitude is to the left of obstacle center, use left edge
+        // Otherwise use right edge
+        val useLeftEdge = avgLon < centerLon
+
+        // Get the edge longitude (with some buffer to stay clear)
+        val edgeLon = if (useLeftEdge) {
+            minLon - 0.00001  // Small offset to stay outside
+        } else {
+            maxLon + 0.00001
+        }
+
+        // Create waypoints that move vertically along the obstacle edge
+        // This prevents diagonal flight across sprayed lines
+
+        // Point 1: Move horizontally from start to the edge (same latitude as start)
+        val edgePoint1 = LatLng(start.latitude, edgeLon)
+
+        // Point 2: Move vertically along the edge to end's latitude
+        val edgePoint2 = LatLng(end.latitude, edgeLon)
+
+        // Only add intermediate points if they actually create a path around the obstacle
+        // and aren't essentially the same as start/end
+        val distStartToEdge1 = GridUtils.haversineDistance(start, edgePoint1)
+
+        // Check if the direct path would intersect the obstacle
+        // If so, add the edge-following waypoints
+        if (distStartToEdge1 > 1.0) {  // More than 1 meter
+            transitionPoints.add(edgePoint1)
+        }
+
+        // Add the vertical movement point along the edge
+        if (GridUtils.haversineDistance(edgePoint1, edgePoint2) > 1.0) {
+            transitionPoints.add(edgePoint2)
+        }
+
+        return transitionPoints
     }
 }

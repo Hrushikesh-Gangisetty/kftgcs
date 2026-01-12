@@ -1933,6 +1933,63 @@ fun PlanScreen(
                             )
                         }
 
+                        // Obstacle Boundary (Buffer distance from obstacles) - Only show if obstacles exist
+                        if (obstacles.isNotEmpty()) {
+                            Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("Obstacle Boundary", color = if (isPlanSaved) Color.Gray else Color.White, modifier = Modifier.weight(1f))
+                                    Text("${String.format(Locale.US, "%.1f", obstacleBoundary)} m", color = if (isPlanSaved) Color.Gray else Color.White, fontWeight = FontWeight.Bold)
+                                }
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    IconButton(
+                                        onClick = { if (!isPlanSaved) obstacleBoundary = (obstacleBoundary - 0.5f).coerceAtLeast(1f) },
+                                        enabled = !isPlanSaved,
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Remove,
+                                            contentDescription = "Decrease",
+                                            tint = if (isPlanSaved) Color.Gray else Color.White,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                    Slider(
+                                        value = obstacleBoundary,
+                                        onValueChange = { if (!isPlanSaved) obstacleBoundary = it },
+                                        enabled = !isPlanSaved,
+                                        valueRange = 1f..10f,
+                                        steps = 17,
+                                        modifier = Modifier.weight(1f),
+                                        colors = SliderDefaults.colors(
+                                            thumbColor = if (isPlanSaved) Color.Gray else Color.Red,
+                                            activeTrackColor = if (isPlanSaved) Color.Gray else Color.Red,
+                                            inactiveTrackColor = Color.Gray,
+                                            disabledThumbColor = Color.Gray,
+                                            disabledActiveTrackColor = Color.Gray
+                                        )
+                                    )
+                                    IconButton(
+                                        onClick = { if (!isPlanSaved) obstacleBoundary = (obstacleBoundary + 0.5f).coerceAtMost(10f) },
+                                        enabled = !isPlanSaved,
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Add,
+                                            contentDescription = "Increase",
+                                            tint = if (isPlanSaved) Color.Gray else Color.White,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                                Text(
+                                    "Buffer distance from obstacles (min 3m enforced)",
+                                    color = Color.Gray,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    modifier = Modifier.padding(top = 2.dp)
+                                )
+                            }
+                        }
+
                         // Spray Rate Slider (moved above Auto Spray)
                         // PWM mapping: OFF=1000, 10%=1100, 50%=1500, 100%=2000
                         // Uses DO_SET_SERVO (SERVO7) by default
