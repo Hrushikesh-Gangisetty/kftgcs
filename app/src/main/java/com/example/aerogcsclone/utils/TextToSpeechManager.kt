@@ -338,6 +338,19 @@ class TextToSpeechManager(private val context: Context) : TextToSpeech.OnInitLis
     }
 
     /**
+     * Announces language selection
+     * @param languageCode "en" for English, "te" for Telugu
+     */
+    fun announceLanguageSelected(languageCode: String) {
+        val message = if (languageCode == "en") {
+            "English is selected"
+        } else {
+            "తెలుగు ని ఎంచుకున్నారు"
+        }
+        speakImmediate(message)
+    }
+
+    /**
      * Stops any ongoing speech
      */
     fun stop() {

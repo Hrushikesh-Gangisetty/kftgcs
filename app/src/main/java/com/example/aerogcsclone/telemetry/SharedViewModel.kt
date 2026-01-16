@@ -117,6 +117,11 @@ class SharedViewModel : ViewModel() {
         Log.d("SharedVM", "Language set to: $languageCode")
     }
 
+    // Announce language selection
+    fun announceLanguageSelected(languageCode: String) {
+        ttsManager?.announceLanguageSelected(languageCode)
+    }
+
     // TTS announcement methods
     fun announceCalibrationStarted() {
         ttsManager?.announceCalibrationStarted()
@@ -2097,7 +2102,7 @@ class SharedViewModel : ViewModel() {
                 // Complete
                 addNotification(
                     Notification(
-                        message = "Mission resumed from waypoint $resumeWaypointNumber",
+                        message = "Mission resumed from waypoint $resumeWaypointNumber - Switch to AUTO to resume",
                         type = NotificationType.SUCCESS
                     )
                 )
@@ -3207,8 +3212,6 @@ class SharedViewModel : ViewModel() {
                     ttsManager?.speak("Geofence! Drone stopped!")
                 }
 
-                Log.i("Geofence", "═══════════════════════════════════════════════════")
-                Log.i("Geofence", "✓ EMERGENCY GEOFENCE RESPONSE COMPLETE")
                 Log.i("Geofence", "═══════════════════════════════════════════════════")
 
                 // Reset the geofence triggering flag after a short delay
