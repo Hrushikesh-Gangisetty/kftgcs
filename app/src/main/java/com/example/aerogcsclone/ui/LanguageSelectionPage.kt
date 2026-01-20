@@ -147,8 +147,14 @@ fun LanguageSelectionPage(
 
                                 // Set language in SharedViewModel (this updates both TTS and UI strings)
                                 when (language) {
-                                    "English" -> sharedViewModel.setLanguage("en")
-                                    "Telugu" -> sharedViewModel.setLanguage("te")
+                                    "English" -> {
+                                        sharedViewModel.setLanguage("en")
+                                        sharedViewModel.announceLanguageSelected("en")
+                                    }
+                                    "Telugu" -> {
+                                        sharedViewModel.setLanguage("te")
+                                        sharedViewModel.announceLanguageSelected("te")
+                                    }
                                 }
                             },
                             colors = MenuDefaults.itemColors(textColor = Color.White)
