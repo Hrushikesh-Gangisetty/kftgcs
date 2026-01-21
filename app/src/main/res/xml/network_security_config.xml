@@ -23,6 +23,9 @@
         <domain includeSubdomains="true">localhost</domain>
         <domain includeSubdomains="true">127.0.0.1</domain>
 
+        <!-- Android Emulator host loopback (for WebSocket and API connections) -->
+        <domain includeSubdomains="true">10.0.2.2</domain>
+
         <!-- Private network ranges for drone connections -->
         <!-- Class A private network (10.x.x.x) -->
         <domain includeSubdomains="true">10.0.0.1</domain>
