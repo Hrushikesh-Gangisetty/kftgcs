@@ -54,6 +54,7 @@ class WebSocketManager {
     var adminId: Int = -1  // Will be set from SessionManager
     var pilotId: Int = -1  // Will be set from SessionManager
 
+
     // 🔥 Drone UID - Real drone identifier from Flight Controller
     var droneUid: String = ""  // Set from TelemetryState / FC AUTOPILOT_VERSION
 

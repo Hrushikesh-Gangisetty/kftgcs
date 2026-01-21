@@ -132,9 +132,8 @@ class MainActivity : ComponentActivity() {
                     GCSApplication.isDroneInFlight = isArmed && isInAir
 
                     // ✅ Update WebSocket telemetry with real-time MAVSDK data
+                    // NOTE: This updates the values frequently, but sendTelemetry() is only called every 1 second by the Handler
                     if (telemetryState.connected) {
-                        android.util.Log.d("WebSocketTelemetry", "📊 Updating telemetry data from MAVSDK (connected=${telemetryState.connected})")
-
                         // Position
                         wsManager.lat = telemetryState.latitude ?: 0.0
                         wsManager.lng = telemetryState.longitude ?: 0.0
@@ -150,12 +149,6 @@ class MainActivity : ComponentActivity() {
                         wsManager.voltage = (telemetryState.voltage ?: 0f).toDouble()
                         wsManager.current = (telemetryState.currentA ?: 0f).toDouble()
                         wsManager.batteryRemaining = telemetryState.batteryPercent ?: 0
-
-                        // Debug logging for battery telemetry
-                        android.util.Log.d("WebSocketTelemetry", "Battery Data -> " +
-                            "Voltage: ${telemetryState.voltage}, " +
-                            "Current: ${telemetryState.currentA}, " +
-                            "Remaining: ${telemetryState.batteryPercent}%")
 
                         // GPS
                         wsManager.satellites = telemetryState.sats ?: 0
@@ -199,12 +192,10 @@ class MainActivity : ComponentActivity() {
                             lowBatteryEventSent = false
                         }
 
-                        // NOTE: Don't call sendTelemetry() here - throttled sender handles it
-                    } else {
-                        android.util.Log.w("WebSocketTelemetry", "⚠️ Skipping telemetry update - drone not connected")
+                        // NOTE: Don't call sendTelemetry() here - throttled sender handles it every 1 second
                     }
 
-                    // Log status changes for debugging
+                    // Log status changes for debugging (only when drone is in flight)
                     if (GCSApplication.isDroneInFlight) {
                         android.util.Log.d("MainActivity", "Drone in flight - crash protection active (Alt: ${altitude}m)")
                     }
