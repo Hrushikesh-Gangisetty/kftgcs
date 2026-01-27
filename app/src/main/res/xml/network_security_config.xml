@@ -1,24 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
     <!--
-        SECURITY: Cleartext traffic is disabled by default.
-        Only local network addresses are permitted for drone TCP/IP connections.
-        All external API calls (Firebase, Google Maps, etc.) must use HTTPS.
+        SECURITY: Cleartext traffic enabled for WebSocket connections to AWS.
+        Android → WebSocket → AWS EC2 (65.0.76.31:3000) → PostgreSQL DB
     -->
 
-    <!-- Base configuration: Block cleartext traffic for all domains -->
-    <base-config cleartextTrafficPermitted="false">
+    <!-- Base configuration: Allow cleartext traffic for development/testing -->
+    <base-config cleartextTrafficPermitted="true">
         <trust-anchors>
             <certificates src="system" />
         </trust-anchors>
     </base-config>
 
     <!--
-        Allow cleartext ONLY for local network drone connections.
-        Drones typically communicate over local IP addresses.
-        This is necessary for MAVLink TCP/UDP communication.
+        Allow cleartext for AWS EC2 and local network drone connections.
     -->
     <domain-config cleartextTrafficPermitted="true">
+        <!-- AWS EC2 Server for WebSocket telemetry -->
+        <domain includeSubdomains="true">65.0.76.31</domain>
+
         <!-- Localhost for emulator/local testing -->
         <domain includeSubdomains="true">localhost</domain>
         <domain includeSubdomains="true">127.0.0.1</domain>

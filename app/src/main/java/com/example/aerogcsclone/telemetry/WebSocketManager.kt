@@ -70,10 +70,10 @@ class WebSocketManager {
         // Use: openssl s_client -connect your-server.com:443 | openssl x509 -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | openssl enc -base64
         private const val CERTIFICATE_PIN = "sha256/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 
-        // Local development URLs (WS - unencrypted, allowed only on local network by network_security_config.xml)
-        // For emulator: ws://10.0.2.2:8080/ws/telemetry
-        // For real device on same network: ws://192.168.x.x:8080/ws/telemetry
-        private const val LOCAL_DEV_URL = "ws://10.0.2.2:8080/ws/telemetry"
+        // AWS EC2 Server URL (WS - unencrypted)
+        // Direct connection: Android → WebSocket → AWS EC2 → PostgreSQL DB
+        // ❌ No 127.0.0.1 ❌ No 10.0.2.2 ✅ Direct AWS IP + port
+        private const val LOCAL_DEV_URL = "ws://65.0.76.31:3000/ws/telemetry"
 
         /**
          * Get the appropriate WebSocket URL based on configuration
