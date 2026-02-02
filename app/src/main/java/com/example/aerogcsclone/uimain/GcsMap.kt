@@ -296,38 +296,42 @@ private fun createDroneIconWithArrow(context: android.content.Context): BitmapDe
         val scaledDrone = Bitmap.createScaledBitmap(droneBmp, sizePx, sizePx, true)
         canvas.drawBitmap(scaledDrone, 0f, 0f, null)
 
-        // Draw a smaller arrow pointing upward (north/0°) to indicate the nose direction
+        // Draw a prominent arrow pointing upward (north/0°) to indicate the nose direction
         val arrowPaint = android.graphics.Paint().apply {
             isAntiAlias = true
             color = android.graphics.Color.YELLOW
             style = android.graphics.Paint.Style.FILL_AND_STROKE
-            strokeWidth = 1f
+            strokeWidth = 2f
+            strokeJoin = android.graphics.Paint.Join.ROUND
+            strokeCap = android.graphics.Paint.Cap.ROUND
         }
 
-        // Calculate smaller arrow dimensions - reduced size and better centered
+        // Create an isosceles triangle arrow - tall and narrow for classic arrow look
         val centerX = sizePx / 2f
-        val arrowHeight = sizePx * 0.28f  // Increased from 0.18f to 0.28f for larger arrow
-        val arrowWidth = sizePx * 0.12f   // Increased from 0.08f to 0.12f for larger arrow
+        val topY = sizePx * 0.08f  // Top point of arrow (higher up)
+        val bottomY = sizePx * 0.58f  // Bottom of arrow (extended down)
+        val leftX = centerX - (sizePx * 0.12f)  // Left corner (narrower)
+        val rightX = centerX + (sizePx * 0.12f)  // Right corner (narrower)
 
-        // Define arrow path pointing upward (triangular arrow centered on drone)
+        // Define arrow path - equilateral triangle pointing upward
         val arrowPath = android.graphics.Path().apply {
-            // Arrow tip positioned closer to center for better centering
-            moveTo(centerX, sizePx * 0.25f)  // Changed from 0.05f to 0.25f
-            // Arrow left side
-            lineTo(centerX - arrowWidth / 2, sizePx * 0.25f + arrowHeight)
-            // Arrow right side
-            lineTo(centerX + arrowWidth / 2, sizePx * 0.25f + arrowHeight)
-            // Close the path
+            // Arrow tip (top point)
+            moveTo(centerX, topY)
+            // Bottom left corner
+            lineTo(leftX, bottomY)
+            // Bottom right corner
+            lineTo(rightX, bottomY)
+            // Close the path back to tip
             close()
         }
 
-        // Draw the arrow
+        // Draw the arrow fill
         canvas.drawPath(arrowPath, arrowPaint)
 
-        // Add white border to arrow for better visibility with thinner stroke
+        // Add white border to arrow for better visibility and definition
         arrowPaint.style = android.graphics.Paint.Style.STROKE
         arrowPaint.color = android.graphics.Color.WHITE
-        arrowPaint.strokeWidth = 1.5f  // Reduced from 2f to 1.5f
+        arrowPaint.strokeWidth = 2.5f
         canvas.drawPath(arrowPath, arrowPaint)
 
         BitmapDescriptorFactory.fromBitmap(resultBitmap)
