@@ -870,13 +870,13 @@ fun GcsMap(
             }
         }
 
-        // Grid lines (green for original, or gray when in split mode)
+        // Grid lines (red when drawing survey plan, or gray when in split mode)
         gridLines.forEach { line ->
             if (line.size >= 2) {
                 Polyline(
                     points = line,
                     width = 4f, // Thicker for better visibility
-                    color = if (splitPlanMode) Color.Gray.copy(alpha = 0.5f) else Color.Green
+                    color = if (splitPlanMode) Color.Gray.copy(alpha = 0.5f) else Color.Red
                 )
             }
         }
@@ -934,7 +934,7 @@ fun GcsMap(
                         Polyline(
                             points = listOf(start, end),
                             width = 3f,
-                            color = Color.Green.copy(alpha = 0.7f)
+                            color = Color.Red.copy(alpha = 0.7f)
                         )
                     }
                     // If it crosses an obstacle, don't draw the line (drone will fly around)
@@ -1043,9 +1043,9 @@ fun GcsMap(
             }
         }
 
-        // Red polyline showing the drone's traveled path
+        // Green polyline showing the drone's traveled path
         if (visitedPositions.size > 1) {
-            Polyline(points = visitedPositions.toList(), width = 6f, color = Color.Red)
+            Polyline(points = visitedPositions.toList(), width = 6f, color = Color.Green)
         }
 
         // ===== RESUME POINT MARKER =====
