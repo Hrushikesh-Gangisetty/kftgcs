@@ -450,14 +450,14 @@ fun GcsMap(
                 Polyline(
                     points = closedPolygon,
                     width = 4f,
-                    color = Color.Red
+                    color = Color.Yellow
                 )
 
                 // Fill the polygon area with semi-transparent red
                 Polygon(
                     points = geofencePolygon,
-                    fillColor = Color.Red.copy(alpha = 0.2f),
-                    strokeColor = Color.Red,
+                    fillColor = Color.Red.copy(alpha = 0.05f),
+                    strokeColor = Color.Yellow,
                     strokeWidth = 4f
                 )
 
@@ -524,8 +524,8 @@ fun GcsMap(
                 // Fill the outer fence area with semi-transparent yellow
                 Polygon(
                     points = outerFencePolygon,
-                    fillColor = Color.Yellow.copy(alpha = 0.2f),
-                    strokeColor = Color.Yellow,
+                    fillColor = Color.Yellow.copy(alpha = 0.05f),
+                    strokeColor = Color.Red,
                     strokeWidth = 3f
                 )
 
@@ -534,7 +534,7 @@ fun GcsMap(
                 Polyline(
                     points = closedOuterFence,
                     width = 3f,
-                    color = Color.Yellow
+                    color = Color.Red
                 )
             }
         }
