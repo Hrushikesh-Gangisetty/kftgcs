@@ -299,15 +299,15 @@ private fun createDroneIconWithArrow(context: android.content.Context): BitmapDe
         // Draw a smaller arrow pointing upward (north/0°) to indicate the nose direction
         val arrowPaint = android.graphics.Paint().apply {
             isAntiAlias = true
-            color = android.graphics.Color.BLUE
+            color = android.graphics.Color.YELLOW
             style = android.graphics.Paint.Style.FILL_AND_STROKE
             strokeWidth = 1f
         }
 
         // Calculate smaller arrow dimensions - reduced size and better centered
         val centerX = sizePx / 2f
-        val arrowHeight = sizePx * 0.18f  // Reduced from 0.35f to 0.18f
-        val arrowWidth = sizePx * 0.08f   // Reduced from 0.15f to 0.08f
+        val arrowHeight = sizePx * 0.28f  // Increased from 0.18f to 0.28f for larger arrow
+        val arrowWidth = sizePx * 0.12f   // Increased from 0.08f to 0.12f for larger arrow
 
         // Define arrow path pointing upward (triangular arrow centered on drone)
         val arrowPath = android.graphics.Path().apply {
