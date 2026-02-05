@@ -18,6 +18,7 @@ import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.maps.android.compose.*
 import com.google.maps.android.SphericalUtil
 import java.util.Locale
+import kotlin.math.sqrt
 
 // Helper function to create larger marker icons for waypoints - easier to interact with
 private fun createMediumMarker(hue: Float): BitmapDescriptor {
@@ -306,22 +307,29 @@ private fun createDroneIconWithArrow(context: android.content.Context): BitmapDe
             strokeCap = android.graphics.Paint.Cap.ROUND
         }
 
-        // Create an isosceles triangle arrow - tall and narrow for classic arrow look
+        // Create an equilateral triangle arrow - all sides equal length
         val centerX = sizePx / 2f
-        val topY = sizePx * 0.08f  // Top point of arrow (higher up)
-        val bottomY = sizePx * 0.58f  // Bottom of arrow (extended down)
-        val leftX = centerX - (sizePx * 0.12f)  // Left corner (narrower)
-        val rightX = centerX + (sizePx * 0.12f)  // Right corner (narrower)
+        val triangleSize = sizePx * 0.35f  // Size of triangle sides
+
+        // Calculate equilateral triangle dimensions
+        // Height = side * sqrt(3)/2, but we'll position it for visual balance
+        val height = triangleSize * (sqrt(4.0) / 2.0).toFloat()
+
+        // Position triangle in upper portion of icon for clear direction indication
+        val topY = sizePx * 0.15f  // Top vertex position
+        val bottomY = topY + height * 0.8f  // Bottom edge (slightly compressed for better look)
+        val leftX = centerX - triangleSize / 2f  // Left vertex
+        val rightX = centerX + triangleSize / 2f  // Right vertex
 
         // Define arrow path - equilateral triangle pointing upward
         val arrowPath = android.graphics.Path().apply {
-            // Arrow tip (top point)
+            // Top vertex (nose pointing up/north)
             moveTo(centerX, topY)
-            // Bottom left corner
+            // Bottom left vertex
             lineTo(leftX, bottomY)
-            // Bottom right corner
+            // Bottom right vertex
             lineTo(rightX, bottomY)
-            // Close the path back to tip
+            // Close the path back to top vertex
             close()
         }
 
