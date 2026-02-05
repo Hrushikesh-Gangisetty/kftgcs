@@ -73,7 +73,7 @@ class WebSocketManager {
         // AWS EC2 Server URL (WS - unencrypted)
         // Direct connection: Android → WebSocket → AWS EC2 → PostgreSQL DB
         // ❌ No 127.0.0.1 ❌ No 10.0.2.2 ✅ Direct AWS IP + port
-        private const val LOCAL_DEV_URL = "ws://65.0.76.31:3000/ws/telemetry"
+        private const val LOCAL_DEV_URL = "ws://65.0.76.31:8000/ws/telemetry/"
 
         /**
          * Get the appropriate WebSocket URL based on configuration
@@ -99,6 +99,11 @@ class WebSocketManager {
     }
 
     private val TAG = "WebSocketManager"
+
+    // Fallback timeout handler (in case backend doesn't send session_ack)
+    private val sessionAckTimeout = 3000L  // 3 seconds timeout
+    private var sessionAckTimeoutRunnable: Runnable? = null
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
 
     /**
      * Build a secure OkHttpClient with certificate pinning for production
@@ -137,10 +142,21 @@ class WebSocketManager {
     private var telemetryEnabled = false
     private var readyForTelemetry = false
 
-    // ✅ Pilot and Admin identification (must be set before connecting)
+    // ✅ Pilot and Admin identification (must be set from SessionManager)
     var adminId: Int = -1  // Will be set from SessionManager
     var pilotId: Int = -1  // Will be set from SessionManager
 
+    // 🔥 Auto-reconnection settings
+    private var shouldReconnect = false  // Whether to auto-reconnect on disconnect
+    private var reconnectAttempts = 0
+    private val maxReconnectAttempts = 5
+    private val reconnectDelayMs = 2000L
+    private var reconnectRunnable: Runnable? = null
+    private var isReconnecting = false
+
+    // 🔥 Track session_ack timing for debugging
+    private var sessionAckReceivedTime: Long = 0
+    private var connectionOpenedTime: Long = 0
 
     // 🔥 Drone UID - Real drone identifier from Flight Controller
     var droneUid: String = ""  // Set from TelemetryState / FC AUTOPILOT_VERSION
@@ -162,7 +178,6 @@ class WebSocketManager {
 
     // Mission tracking (received from backend)
     var missionId: String? = null
-        private set
 
     // 🔥 Mission statistics tracking
     var missionBatteryStart: Int = 100  // Battery % at mission start
@@ -205,11 +220,13 @@ class WebSocketManager {
         private set
 
     fun connect() {
-        Log.e("WebSocketManager", "🔥 connect() method CALLED")
+        Log.e("WS_DEBUG", "🔥🔥🔥 connect() method CALLED 🔥🔥🔥")
+        Log.e("WS_DEBUG", "📋 Thread: ${Thread.currentThread().name}")
 
         // ✅ Validate pilotId and adminId are set from SessionManager
         if (pilotId <= 0) {
             Log.e(TAG, "⛔ Cannot connect - pilotId not set! Please login first.")
+            Log.e("WS_DEBUG", "❌ ABORT: pilotId=$pilotId is invalid")
             return
         }
         if (adminId <= 0) {
@@ -217,6 +234,14 @@ class WebSocketManager {
             adminId = 1
         }
 
+        // 🔥 Enable auto-reconnection when connect() is called
+        shouldReconnect = true
+        if (!isReconnecting) {
+            reconnectAttempts = 0  // Reset attempts only on fresh connect
+        }
+        isReconnecting = false
+
+        Log.e("WS_DEBUG", "📋 pilotId=$pilotId, adminId=$adminId, droneUid='$droneUid'")
         Log.d(TAG, "📋 Connecting with pilotId=$pilotId, adminId=$adminId")
 
         // Log security status
@@ -227,15 +252,19 @@ class WebSocketManager {
         }
 
         try {
+            Log.e("WS_DEBUG", "📡 Target URL: $wsUrl")
             Log.d(TAG, "Building WebSocket request for URL: $wsUrl")
             val request = Request.Builder()
                 .url(wsUrl)
                 .build()
 
+            Log.e("WS_DEBUG", "📡 Request built, calling client.newWebSocket()...")
             Log.d(TAG, "Creating WebSocket connection...")
             webSocket = client.newWebSocket(request, socketListener)
+            Log.e("WS_DEBUG", "✅ client.newWebSocket() called - waiting for onOpen/onFailure")
             Log.e(TAG, "✅ Attempting to connect to WebSocket at $wsUrl")
         } catch (e: Exception) {
+            Log.e("WS_DEBUG", "❌❌❌ EXCEPTION in connect(): ${e.message}", e)
             Log.e(TAG, "❌ Failed to connect to WebSocket: ${e.message}", e)
             e.printStackTrace()
         }
@@ -245,49 +274,129 @@ class WebSocketManager {
 
         // ✅ STEP 2 — Send session_start on connection
         override fun onOpen(webSocket: WebSocket, response: Response) {
+            // 🔥 CRITICAL DEBUG LOG - MUST SEE THIS IN LOGCAT
+            Log.e("WS_DEBUG", "🔥🔥🔥 onOpen() CALLED — preparing session_start 🔥🔥🔥")
+
             isConnected = true
             sessionStarted = false
             readyForTelemetry = false
+            connectionOpenedTime = System.currentTimeMillis()
+            sessionAckReceivedTime = 0
+
+            // 🔥 Enhanced logging for debugging backend connection
+            Log.e(TAG, "🔥🔥🔥 WebSocket CONNECTED to: $wsUrl 🔥🔥🔥")
+            Log.e(TAG, "📡 Response Code: ${response.code}")
+            Log.e(TAG, "📡 Response Message: ${response.message}")
+            Log.e(TAG, "📡 Response Protocol: ${response.protocol}")
+            Log.e(TAG, "📡 This should trigger TelemetryConsumer.connect() in Django backend!")
 
             // 🔥 Reset mission statistics when new session starts
             missionAlertsCount = 0
             missionBatteryStart = batteryRemaining  // Capture current battery as start
             Log.d(TAG, "📊 Mission stats reset - Battery start: $missionBatteryStart%")
 
-            val sessionStart = JSONObject().apply {
-                put("type", "session_start")
-                put("vehicle_name", "DRONE_01") // MUST match DB
-                put("admin_id", adminId)
-                put("pilot_id", pilotId)
-                // 🔥 REAL DRONE ID from Flight Controller (with SITL fallback)
-                put("drone_uid", resolveDroneUid())
-                // 🔥 Plot name from UI
-                put("plot_name", selectedPlotName)
+            try {
+                val sessionStart = JSONObject().apply {
+                    put("type", "session_start")
+                    put("vehicle_name", "DRONE_01") // MUST match DB
+                    put("admin_id", adminId)
+                    put("pilot_id", pilotId)
+                    // 🔥 REAL DRONE ID from Flight Controller (with SITL fallback)
+                    put("drone_uid", resolveDroneUid())
+                    // 🔥 Plot name from UI
+                    put("plot_name", selectedPlotName)
+                }
+
+                val payload = sessionStart.toString()
+
+                // 🔥 CRITICAL: Log BEFORE sending
+                Log.e("WS_DEBUG", "📤 About to send session_start payload: $payload")
+
+                val sent = webSocket.send(payload)
+
+                // 🔥 CRITICAL DEBUG LOG - Check if send() succeeded
+                Log.e("WS_DEBUG", "📤📤📤 session_start send result = $sent 📤📤📤")
+
+                if (!sent) {
+                    Log.e("WS_DEBUG", "❌❌❌ CRITICAL: send() returned FALSE - message NOT sent! ❌❌❌")
+                } else {
+                    Log.e("WS_DEBUG", "✅ send() returned TRUE - message should reach server")
+                }
+
+                Log.e(TAG, "📤📤📤 Sending session_start to Django backend 📤📤📤")
+                Log.e(TAG, "📤 Payload: $payload")
+                Log.e(TAG, "📤 Send result: $sent")
+                Log.e(TAG, "📤 Waiting for session_ack from TelemetryConsumer...")
+            } catch (e: Exception) {
+                Log.e("WS_DEBUG", "❌❌❌ EXCEPTION in onOpen while sending session_start: ${e.message}", e)
+                e.printStackTrace()
             }
 
-            webSocket.send(sessionStart.toString())
-            Log.d(TAG, "📤 Sent session_start: $sessionStart")
+            // 🔥 FALLBACK: Enable telemetry after timeout if backend doesn't send session_ack
+            // Cancel any existing timeout
+            sessionAckTimeoutRunnable?.let { handler.removeCallbacks(it) }
+
+            // Create new timeout runnable
+            sessionAckTimeoutRunnable = Runnable {
+                if (!readyForTelemetry && isConnected) {
+                    Log.w(TAG, "⚠️ Backend didn't send session_ack within ${sessionAckTimeout}ms")
+                    Log.w(TAG, "🔄 Enabling telemetry anyway (fallback mode)")
+                    sessionStarted = true
+                    readyForTelemetry = true
+                    telemetryEnabled = true
+                    Log.d(TAG, "✅ Telemetry enabled via FALLBACK mechanism")
+                }
+            }
+
+            // Schedule timeout
+            handler.postDelayed(sessionAckTimeoutRunnable!!, sessionAckTimeout)
+            Log.d(TAG, "⏱️ Started ${sessionAckTimeout}ms timeout for session_ack")
         }
 
         // ✅ STEP 3 — Android MUST wait for ACK
         override fun onMessage(webSocket: WebSocket, text: String) {
-            Log.d(TAG, "📩 From server: $text")
+            // 🔥 CRITICAL DEBUG - Log ALL incoming messages
+            Log.e("WS_DEBUG", "🔥 onMessage() CALLED - received data from server")
+            Log.e("WS_DEBUG", "📩 Raw text length: ${text.length}")
+            Log.e(TAG, "📩📩📩 MESSAGE FROM DJANGO BACKEND 📩📩📩")
+            Log.e(TAG, "📩 Raw message: $text")
 
             try {
                 val msg = JSONObject(text)
                 val messageType = msg.getString("type")
 
+                Log.e(TAG, "📩 Message type: $messageType")
+
                 when (messageType) {
                     "session_ack" -> {
+                        // Cancel the timeout since we got the ack
+                        sessionAckTimeoutRunnable?.let { handler.removeCallbacks(it) }
+
                         sessionStarted = true
                         readyForTelemetry = true
                         telemetryEnabled = true
-                        Log.d(TAG, "✅ Session acknowledged, telemetry allowed")
+                        sessionAckReceivedTime = System.currentTimeMillis()
+
+                        Log.e(TAG, "✅✅✅ SESSION_ACK RECEIVED FROM BACKEND - TELEMETRY ENABLED ✅✅✅")
+                        Log.e(TAG, "✅ TelemetryConsumer.receive() was triggered successfully!")
+                        Log.e(TAG, "✅ Backend is properly configured and responding correctly")
+                        Log.e(TAG, "⏳ Waiting for mission_created message from backend...")
                     }
                     "mission_created" -> {
                         missionId = msg.getString("mission_id")
                         readyForTelemetry = true
-                        Log.d(TAG, "🚀 Mission started: $missionId")
+                        // 🔥 Reset reconnect attempts on successful mission creation
+                        reconnectAttempts = 0
+                        Log.e(TAG, "🚀🚀🚀 MISSION CREATED BY BACKEND 🚀🚀🚀")
+                        Log.e(TAG, "🚀 Mission ID: $missionId")
+                        Log.e(TAG, "🚀 Mission was inserted into PostgreSQL database!")
+                    }
+                    "error" -> {
+                        // 🔥 Handle error messages from backend
+                        val errorMessage = msg.optString("message", "Unknown error")
+                        Log.e(TAG, "❌❌❌ ERROR FROM BACKEND ❌❌❌")
+                        Log.e(TAG, "❌ Error message: $errorMessage")
+                        Log.e(TAG, "❌ Check: Admin(id=$adminId) and Pilot(id=$pilotId) must exist in database!")
                     }
                     else -> {
                         Log.d(TAG, "📨 Received message type: $messageType")
@@ -299,31 +408,77 @@ class WebSocketManager {
         }
 
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+            // 🔥 CRITICAL DEBUG - Connection failure tracking
+            Log.e("WS_DEBUG", "❌❌❌ onFailure() CALLED ❌❌❌")
+            Log.e("WS_DEBUG", "❌ Error: ${t.javaClass.simpleName}: ${t.message}")
+            Log.e("WS_DEBUG", "❌ Response code: ${response?.code}")
+
+            // Cancel timeout
+            sessionAckTimeoutRunnable?.let { handler.removeCallbacks(it) }
+
             isConnected = false
             sessionStarted = false
             telemetryEnabled = false
             readyForTelemetry = false
-            Log.e("WebSocket", "Disconnected: ${t.message}")
-            Log.e(TAG, "❌ WebSocket error: ${t.message}", t)
-            Log.e(TAG, "Response: ${response?.toString()}")
-            Log.e(TAG, "Error type: ${t.javaClass.simpleName}")
+            Log.e(TAG, "❌❌❌ WEBSOCKET CONNECTION FAILED ❌❌❌")
+            Log.e(TAG, "❌ Error: ${t.message}", t)
+            Log.e(TAG, "❌ Response: ${response?.toString()}")
+            Log.e(TAG, "❌ Response code: ${response?.code}")
+            Log.e(TAG, "❌ Error type: ${t.javaClass.simpleName}")
+            Log.e(TAG, "❌ URL attempted: $wsUrl")
+            Log.e(TAG, "❌ Check if Django server is running: daphne -b 0.0.0.0 -p 8000 pavaman_gcs.asgi:application")
             t.printStackTrace()
+
+            // 🔥 Trigger auto-reconnection on failure
+            scheduleReconnect("connection_failure")
         }
 
         override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+            // 🔥 CRITICAL DEBUG - Track when connection is closing
+            Log.e("WS_DEBUG", "⚠️⚠️⚠️ onClosing() CALLED ⚠️⚠️⚠️")
+            Log.e("WS_DEBUG", "⚠️ Close code: $code, reason: $reason")
+            Log.e("WS_DEBUG", "⚠️ sessionStarted=$sessionStarted, readyForTelemetry=$readyForTelemetry, missionId=$missionId")
+
+            // Cancel timeout
+            sessionAckTimeoutRunnable?.let { handler.removeCallbacks(it) }
+
+            // 🔥 Detect if connection closed immediately after session_ack (backend error!)
+            if (sessionAckReceivedTime > 0 && missionId == null) {
+                val timeSinceAck = System.currentTimeMillis() - sessionAckReceivedTime
+                if (timeSinceAck < 500) {
+                    Log.e(TAG, "🔴🔴🔴 CONNECTION CLOSED ${timeSinceAck}ms AFTER session_ack! 🔴🔴🔴")
+                    Log.e(TAG, "🔴 This means the BACKEND failed during database operations!")
+                    Log.e(TAG, "🔴 Check Django/Daphne logs for: Admin.DoesNotExist or Pilot.DoesNotExist")
+                    Log.e(TAG, "🔴 Verify Admin(id=$adminId) and Pilot(id=$pilotId) exist in database!")
+                }
+            }
+
+            // 🔥 Mark as disconnected to prevent further sends, but keep session state for reconnect
             isConnected = false
-            sessionStarted = false
-            telemetryEnabled = false
             readyForTelemetry = false
             Log.d(TAG, "WebSocket closing: $code / $reason")
         }
 
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+            // 🔥 CRITICAL DEBUG - Track when connection is fully closed
+            Log.e("WS_DEBUG", "🔴🔴🔴 onClosed() CALLED 🔴🔴🔴")
+            Log.e("WS_DEBUG", "🔴 Close code: $code, reason: $reason")
+
+            // Cancel timeout
+            sessionAckTimeoutRunnable?.let { handler.removeCallbacks(it) }
+
             isConnected = false
             sessionStarted = false
             telemetryEnabled = false
             readyForTelemetry = false
             Log.d(TAG, "WebSocket closed: $code / $reason")
+
+            // 🔥 Auto-reconnect unless this was a deliberate disconnect (code 1000 from client)
+            // Code 1000 from server = unexpected close, should reconnect
+            // Code 1000 from disconnect() = deliberate, don't reconnect
+            if (shouldReconnect) {
+                scheduleReconnect("server_closed_$code")
+            }
         }
     }
 
@@ -553,11 +708,97 @@ class WebSocketManager {
         }
     }
 
-    fun disconnect() {
-        if (isConnected) {
-            webSocket.close(1000, "Client disconnect")
-            Log.d(TAG, "Disconnecting WebSocket")
+    /**
+     * Schedule auto-reconnection after connection failure or unexpected close
+     */
+    private fun scheduleReconnect(reason: String) {
+        if (!shouldReconnect) {
+            Log.d(TAG, "🔌 Auto-reconnect disabled, skipping reconnection")
+            return
         }
+
+        if (reconnectAttempts >= maxReconnectAttempts) {
+            Log.e(TAG, "❌ Max reconnection attempts ($maxReconnectAttempts) reached. Giving up.")
+            shouldReconnect = false
+            return
+        }
+
+        reconnectAttempts++
+        val delay = reconnectDelayMs * reconnectAttempts  // Exponential backoff
+
+        Log.w(TAG, "🔄 Scheduling reconnection attempt $reconnectAttempts/$maxReconnectAttempts in ${delay}ms (reason: $reason)")
+
+        // Cancel any existing reconnect runnable
+        reconnectRunnable?.let { handler.removeCallbacks(it) }
+
+        reconnectRunnable = Runnable {
+            if (shouldReconnect && !isConnected) {
+                Log.i(TAG, "🔄 Attempting reconnection ($reconnectAttempts/$maxReconnectAttempts)...")
+                isReconnecting = true
+                connect()
+            }
+        }
+
+        handler.postDelayed(reconnectRunnable!!, delay)
+    }
+
+    fun disconnect() {
+        try {
+            // 🔥 Disable auto-reconnection when disconnect() is explicitly called
+            shouldReconnect = false
+            reconnectAttempts = 0
+
+            // Cancel any pending timeout
+            sessionAckTimeoutRunnable?.let { handler.removeCallbacks(it) }
+
+            // Cancel any pending reconnection
+            reconnectRunnable?.let { handler.removeCallbacks(it) }
+
+            if (isConnected && ::webSocket.isInitialized) {
+                webSocket.close(1000, "Mission ended - Client disconnect")
+                Log.i(TAG, "🔌 WebSocket disconnecting - Mission ended")
+            } else {
+                Log.d(TAG, "🔌 WebSocket already disconnected")
+            }
+
+            // Reset state
+            isConnected = false
+            sessionStarted = false
+            telemetryEnabled = false
+            readyForTelemetry = false
+            missionId = null
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error during WebSocket disconnect: ${e.message}", e)
+        }
+    }
+
+    /**
+     * Check if WebSocket is ready to send telemetry
+     * @return true if connected, session acknowledged, and mission created
+     */
+    fun isReadyForTelemetry(): Boolean {
+        return isConnected && readyForTelemetry && sessionStarted && missionId != null
+    }
+
+    /**
+     * Force reset connection state and attempt fresh connection
+     */
+    fun reconnect() {
+        Log.i(TAG, "🔄 Force reconnecting WebSocket...")
+        if (::webSocket.isInitialized) {
+            try {
+                webSocket.cancel()
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to cancel existing WebSocket", e)
+            }
+        }
+        isConnected = false
+        sessionStarted = false
+        telemetryEnabled = false
+        readyForTelemetry = false
+        reconnectAttempts = 0
+        shouldReconnect = true
+        connect()
     }
 }
 

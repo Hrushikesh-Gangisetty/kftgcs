@@ -693,11 +693,20 @@ class SharedViewModel : ViewModel() {
 
     /**
      * Show the mission completion dialog with the given data
+     * Also disconnects the WebSocket as the mission has ended
      */
     fun showMissionCompletionDialog(totalTime: String, totalDistance: String, consumedLitres: String) {
         _missionCompletionData.value = MissionCompletionData(totalTime, totalDistance, consumedLitres)
         _showMissionCompletionDialog.value = true
         Log.i("SharedVM", "Mission completion dialog triggered - Time: $totalTime, Distance: $totalDistance, Litres: $consumedLitres")
+
+        // 🔌 Disconnect WebSocket when mission ends
+        try {
+            WebSocketManager.getInstance().disconnect()
+            Log.i("SharedVM", "🔌 WebSocket disconnected - Mission ended")
+        } catch (e: Exception) {
+            Log.e("SharedVM", "❌ Failed to disconnect WebSocket: ${e.message}", e)
+        }
     }
 
     /**
@@ -1822,23 +1831,59 @@ class SharedViewModel : ViewModel() {
                         val wsManager = WebSocketManager.getInstance()
                         if (!wsManager.isConnected) {
                             Log.i("SharedVM", "🔌 Opening WebSocket connection for mission...")
+
+                            // 🔥 CRITICAL: Get latest pilotId and adminId from SessionManager
+                            // This ensures values are up-to-date if user logged in after MainActivity loaded
+                            GCSApplication.getInstance()?.let { app ->
+                                val pilotId = com.example.aerogcsclone.api.SessionManager.getPilotId(app)
+                                val adminId = com.example.aerogcsclone.api.SessionManager.getAdminId(app)
+                                wsManager.pilotId = pilotId
+                                wsManager.adminId = adminId
+                                Log.i("SharedVM", "📋 Updated WebSocket credentials: pilotId=$pilotId, adminId=$adminId")
+
+                                // Warn if pilot is not logged in
+                                if (pilotId <= 0) {
+                                    Log.e("SharedVM", "⚠️ WARNING: pilotId=$pilotId - User may not be logged in! Telemetry will not be saved.")
+                                }
+                            }
+
                             // 🔥 Set plot name before connecting
                             wsManager.selectedPlotName = _currentPlotName.value
                             Log.i("SharedVM", "📋 Plot name set for WebSocket: ${_currentPlotName.value}")
                             wsManager.connect()
+
+                            // 🔥 Wait for WebSocket to connect and receive session_ack before sending status
+                            // This prevents the "socket not ready" error
+                            var waitTime = 0
+                            while (!wsManager.isConnected && waitTime < 5000) {
+                                delay(100)
+                                waitTime += 100
+                            }
+                            // Additional wait for session_ack and mission_created
+                            if (wsManager.isConnected) {
+                                delay(500) // Give time for session_ack and mission_created
+                                Log.i("SharedVM", "✅ WebSocket ready after ${waitTime}ms")
+                            }
                         }
                     } catch (e: Exception) {
                         Log.e("SharedVM", "Failed to connect WebSocket", e)
                     }
 
                     // ✅ Send mission status STARTED to backend (crash-safe)
+                    // Only send if WebSocket is connected and has a mission_id
                     try {
-                        WebSocketManager.getInstance().sendMissionStatus(WebSocketManager.MISSION_STATUS_STARTED)
-                        WebSocketManager.getInstance().sendMissionEvent(
-                            eventType = "MISSION_STARTED",
-                            eventStatus = "INFO",
-                            description = "Mission started successfully"
-                        )
+                        val wsManager = WebSocketManager.getInstance()
+                        if (wsManager.isConnected && wsManager.missionId != null) {
+                            wsManager.sendMissionStatus(WebSocketManager.MISSION_STATUS_STARTED)
+                            wsManager.sendMissionEvent(
+                                eventType = "MISSION_STARTED",
+                                eventStatus = "INFO",
+                                description = "Mission started successfully"
+                            )
+                            Log.i("SharedVM", "✅ Mission status STARTED sent to backend")
+                        } else {
+                            Log.w("SharedVM", "⚠️ Skipping mission status - WebSocket not ready (connected=${wsManager.isConnected}, missionId=${wsManager.missionId})")
+                        }
                     } catch (e: Exception) {
                         Log.e("SharedVM", "Failed to send STARTED status", e)
                     }

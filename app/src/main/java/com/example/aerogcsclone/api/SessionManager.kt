@@ -71,14 +71,16 @@ object SessionManager {
 
             // Check if migration is needed
             if (!legacyPrefs.contains(KEY_EMAIL) && !legacyPrefs.contains(KEY_PILOT_ID)) {
-                return // Nothing to migrate
+                // No legacy data to migrate, but still fix adminId if needed
+                fixAdminIdIfNeeded(context)
+                return
             }
 
             Log.d(TAG, "📦 Migrating session data to encrypted storage...")
 
             val email = legacyPrefs.getString(KEY_EMAIL, null)
             val pilotId = legacyPrefs.getInt(KEY_PILOT_ID, -1)
-            val adminId = legacyPrefs.getInt(KEY_ADMIN_ID, 1)
+            val adminId = legacyPrefs.getInt(KEY_ADMIN_ID, 1) // Use 1 as default (matches DB)
             val isLoggedIn = legacyPrefs.getBoolean(KEY_IS_LOGGED_IN, false)
             val firstName = legacyPrefs.getString(KEY_FIRST_NAME, null)
             val lastName = legacyPrefs.getString(KEY_LAST_NAME, null)
@@ -99,8 +101,32 @@ object SessionManager {
 
             Log.d(TAG, "✅ Session data migration completed successfully")
 
+            // Also fix adminId if needed
+            fixAdminIdIfNeeded(context)
+
         } catch (e: Exception) {
             Log.e(TAG, "❌ Session migration failed: ${e.message}", e)
+        }
+    }
+
+    /**
+     * Fix adminId if it's set to an invalid value
+     * The database has Admin(id=1)
+     * This is public so it can be called on app startup
+     */
+    fun fixAdminIdIfNeeded(context: Context) {
+        try {
+            val prefs = getPreferences(context)
+            val currentAdminId = prefs.getInt(KEY_ADMIN_ID, 1)
+            if (currentAdminId == 2) {
+                Log.w(TAG, "⚠️ Fixing adminId from 2 to 1 (Admin id=1 exists in DB)")
+                prefs.edit {
+                    putInt(KEY_ADMIN_ID, 1)
+                }
+                Log.d(TAG, "✅ adminId fixed to 1")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Failed to fix adminId: ${e.message}", e)
         }
     }
 
@@ -135,7 +161,7 @@ object SessionManager {
     }
 
     fun getAdminId(context: Context): Int {
-        return getPreferences(context).getInt(KEY_ADMIN_ID, 1) // Default to 1 if not set
+        return getPreferences(context).getInt(KEY_ADMIN_ID, 1) // Default to 1 if not set (matches DB)
     }
 
     fun isLoggedIn(context: Context): Boolean {

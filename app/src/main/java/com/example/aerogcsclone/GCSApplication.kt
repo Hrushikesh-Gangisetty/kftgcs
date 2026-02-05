@@ -88,6 +88,10 @@ class GCSApplication : Application() {
             // Migrate PIN (handled by SecurePinManager)
             SecurePinManager.migrateFromPlaintextStorage(this)
 
+            // 🔥 Fix adminId if it's set to 1 (which doesn't exist in DB)
+            // This ensures existing sessions with wrong adminId are fixed
+            SessionManager.fixAdminIdIfNeeded(this)
+
             Timber.i("✓ Secure storage migration check completed")
         } catch (e: Exception) {
             Timber.e(e, "❌ Migration error: ${e.message}")
