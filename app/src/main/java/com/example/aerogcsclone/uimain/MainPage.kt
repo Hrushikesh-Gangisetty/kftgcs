@@ -125,6 +125,7 @@ fun MainPage(
     val missionCompletionData by telemetryViewModel.missionCompletionData.collectAsState()
     val currentProjectName by telemetryViewModel.currentProjectName.collectAsState()
     val currentPlotName by telemetryViewModel.currentPlotName.collectAsState()
+    val currentCropType by telemetryViewModel.currentCropType.collectAsState()
 
 
     Column(
@@ -252,15 +253,16 @@ fun MainPage(
         if (showMissionCompletionDialog) {
             MissionCompletionDialog(
                 totalTime = missionCompletionData.totalTime,
-                totalDistance = missionCompletionData.totalDistance,
+                totalAcres = missionCompletionData.totalAcres,
                 consumedLitres = missionCompletionData.consumedLitres,
                 initialProjectName = currentProjectName,
                 initialPlotName = currentPlotName,
+                initialCropType = currentCropType,
                 onDismiss = {
                     telemetryViewModel.dismissMissionCompletionDialog()
                 },
-                onSave = { projectName, plotName ->
-                    telemetryViewModel.saveMissionCompletionData(projectName, plotName)
+                onSave = { projectName, plotName, cropType ->
+                    telemetryViewModel.saveMissionCompletionData(projectName, plotName, cropType)
                     Toast.makeText(context, "Mission data saved", Toast.LENGTH_SHORT).show()
                 }
             )

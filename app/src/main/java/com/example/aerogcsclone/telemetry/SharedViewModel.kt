@@ -725,7 +725,7 @@ class SharedViewModel : ViewModel() {
     // Store mission completion data for the dialog
     data class MissionCompletionData(
         val totalTime: String = "",
-        val totalDistance: String = "",
+        val totalAcres: String = "",
         val consumedLitres: String = ""
     )
 
@@ -746,10 +746,10 @@ class SharedViewModel : ViewModel() {
      * Show the mission completion dialog with the given data
      * Also disconnects the WebSocket as the mission has ended
      */
-    fun showMissionCompletionDialog(totalTime: String, totalDistance: String, consumedLitres: String) {
-        _missionCompletionData.value = MissionCompletionData(totalTime, totalDistance, consumedLitres)
+    fun showMissionCompletionDialog(totalTime: String, totalAcres: String, consumedLitres: String) {
+        _missionCompletionData.value = MissionCompletionData(totalTime, totalAcres, consumedLitres)
         _showMissionCompletionDialog.value = true
-        Log.i("SharedVM", "Mission completion dialog triggered - Time: $totalTime, Distance: $totalDistance, Litres: $consumedLitres")
+        Log.i("SharedVM", "Mission completion dialog triggered - Time: $totalTime, Acres: $totalAcres, Litres: $consumedLitres")
 
         // 🔌 Disconnect WebSocket when mission ends
         try {
@@ -769,16 +769,21 @@ class SharedViewModel : ViewModel() {
     }
 
     /**
-     * Save the mission completion data with project and plot names
+     * Save the mission completion data with project, plot names, and crop type
      * Called when user clicks OK on the completion dialog
      */
-    fun saveMissionCompletionData(projectName: String, plotName: String) {
+    fun saveMissionCompletionData(projectName: String, plotName: String, cropType: String) {
         _currentProjectName.value = projectName
         _currentPlotName.value = plotName
+        _currentCropType.value = cropType
         _showMissionCompletionDialog.value = false
-        Log.i("SharedVM", "Mission completion data saved - Project: $projectName, Plot: $plotName")
+        Log.i("SharedVM", "Mission completion data saved - Project: $projectName, Plot: $plotName, CropType: $cropType")
         // The actual saving to database should be handled by TlogViewModel or MissionTemplateViewModel
     }
+
+    // Current crop type for mission
+    private val _currentCropType = MutableStateFlow("")
+    val currentCropType: StateFlow<String> = _currentCropType.asStateFlow()
 
     private val _uploadedWaypoints = MutableStateFlow<List<LatLng>>(emptyList())
     val uploadedWaypoints: StateFlow<List<LatLng>> = _uploadedWaypoints.asStateFlow()

@@ -26,25 +26,28 @@ import com.example.aerogcsclone.utils.AppStrings
 @Composable
 fun MissionCompletionDialog(
     totalTime: String,
-    totalDistance: String,
+    totalAcres: String,
     consumedLitres: String,
     initialProjectName: String = "",
     initialPlotName: String = "",
+    initialCropType: String = "",
     onDismiss: () -> Unit,
-    onSave: (projectName: String, plotName: String) -> Unit
+    onSave: (projectName: String, plotName: String, cropType: String) -> Unit
 ) {
     var projectName by remember { mutableStateOf(initialProjectName) }
     var plotName by remember { mutableStateOf(initialPlotName) }
+    var cropType by remember { mutableStateOf(initialCropType) }
     var projectNameError by remember { mutableStateOf<String?>(null) }
     var plotNameError by remember { mutableStateOf<String?>(null) }
 
     // Update values when initial values change
-    LaunchedEffect(initialProjectName, initialPlotName) {
+    LaunchedEffect(initialProjectName, initialPlotName, initialCropType) {
         projectName = initialProjectName
         plotName = initialPlotName
+        cropType = initialCropType
     }
 
-    // Check if both fields are filled
+    // Check if required fields are filled (cropType is optional)
     val isOkEnabled = projectName.isNotBlank() && plotName.isNotBlank()
 
     Dialog(
@@ -103,53 +106,52 @@ fun MissionCompletionDialog(
                             .padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        // Total Time Row
+                        // Row 1: Total Time and Total Acres side by side
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            horizontalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
-                            Text(
-                                text = "${AppStrings.totalTime}:",
-                                fontWeight = FontWeight.Medium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Text(
-                                text = totalTime,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-
-                        // Total Distance Row
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                text = "${AppStrings.totalDistance}:",
-                                fontWeight = FontWeight.Medium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Text(
-                                text = totalDistance,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-
-                        // Consumed Litres Row (if available)
-                        if (consumedLitres.isNotEmpty() && consumedLitres != "N/A") {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
+                            // Total Time
+                            Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "${AppStrings.consumed}:",
-                                    fontWeight = FontWeight.Medium,
+                                    text = AppStrings.totalTime,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = totalTime,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            // Total Acres
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Total Acres",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = totalAcres,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+
+                        // Consumed Litres (full width, if available)
+                        if (consumedLitres.isNotEmpty() && consumedLitres != "N/A") {
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                Text(
+                                    text = AppStrings.consumed,
+                                    style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                                 Text(
                                     text = consumedLitres,
+                                    style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
@@ -158,10 +160,10 @@ fun MissionCompletionDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(20.dp))
 
                 // Divider
-                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
                 // Input Section Title
                 Text(
@@ -171,52 +173,69 @@ fun MissionCompletionDialog(
                     modifier = Modifier.align(Alignment.Start)
                 )
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
-                // Project Name (Field Name) Input
-                OutlinedTextField(
-                    value = projectName,
-                    onValueChange = {
-                        projectName = it
-                        projectNameError = null
-                    },
-                    label = { Text(AppStrings.projectName) },
-                    placeholder = { Text("Enter project/field name") },
-                    isError = projectNameError != null,
-                    supportingText = projectNameError?.let { { Text(it, color = MaterialTheme.colorScheme.error) } },
+                // Row 1: Project Name and Plot Name side by side
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    // Project Name Input
+                    OutlinedTextField(
+                        value = projectName,
+                        onValueChange = {
+                            projectName = it
+                            projectNameError = null
+                        },
+                        label = { Text(AppStrings.projectName) },
+                        placeholder = { Text("Project name") },
+                        isError = projectNameError != null,
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        textStyle = MaterialTheme.typography.bodyMedium
+                    )
+
+                    // Plot Name Input
+                    OutlinedTextField(
+                        value = plotName,
+                        onValueChange = {
+                            plotName = it
+                            plotNameError = null
+                        },
+                        label = { Text(AppStrings.plotName) },
+                        placeholder = { Text("Plot name") },
+                        isError = plotNameError != null,
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        textStyle = MaterialTheme.typography.bodyMedium
+                    )
+                }
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // Plot Name Input
+                // Crop Type Input (full width)
                 OutlinedTextField(
-                    value = plotName,
-                    onValueChange = {
-                        plotName = it
-                        plotNameError = null
-                    },
-                    label = { Text(AppStrings.plotName) },
-                    placeholder = { Text("Enter plot name") },
-                    isError = plotNameError != null,
-                    supportingText = plotNameError?.let { { Text(it, color = MaterialTheme.colorScheme.error) } },
+                    value = cropType,
+                    onValueChange = { cropType = it },
+                    label = { Text("Crop Type") },
+                    placeholder = { Text("e.g., Wheat, Rice, Cotton (optional)") },
                     modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyMedium
                 )
 
-                // Show helper text if fields are empty
+                // Show helper text if required fields are empty
                 if (!isOkEnabled) {
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "* Both fields are required to save",
+                        text = "* Project and Plot names are required",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
                         modifier = Modifier.align(Alignment.Start)
                     )
                 }
 
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(20.dp))
 
                 // OK Button
                 Button(
@@ -235,7 +254,7 @@ fun MissionCompletionDialog(
                         }
 
                         if (!hasError) {
-                            onSave(projectName.trim(), plotName.trim())
+                            onSave(projectName.trim(), plotName.trim(), cropType.trim())
                         }
                     },
                     modifier = Modifier

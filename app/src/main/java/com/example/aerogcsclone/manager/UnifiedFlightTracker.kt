@@ -383,16 +383,16 @@ class UnifiedFlightTracker(
         // Show completion notification with preserved values
         sharedViewModel.addNotification(
             Notification(
-                "Flight completed! Time: ${formatTime(finalTime)}, Distance: ${formatDistance(finalDistance)}",
+                "Flight completed! Time: ${formatTime(finalTime)}, Area: ${formatAcres(finalDistance)}",
                 NotificationType.SUCCESS
             )
         )
 
-        // Show mission completion dialog with time, distance, and consumed litres
+        // Show mission completion dialog with time, acres (converted from distance), and consumed litres
         val consumedLitresStr = finalConsumedLitres?.let { "%.2f L".format(it) } ?: "N/A"
         sharedViewModel.showMissionCompletionDialog(
             totalTime = formatTime(finalTime),
-            totalDistance = formatDistance(finalDistance),
+            totalAcres = formatAcres(finalDistance),
             consumedLitres = consumedLitresStr
         )
 
@@ -485,6 +485,18 @@ class UnifiedFlightTracker(
             meters >= 1000f -> String.format("%.2f km", meters / 1000f)
             else -> String.format("%.1f m", meters)
         }
+    }
+
+    /**
+     * Convert distance traveled to acres covered
+     * Formula: distance (m) * spray width (m) / 4046.86 (sq meters per acre)
+     * Using default spray width of 5 meters
+     */
+    private fun formatAcres(distanceMeters: Float): String {
+        val sprayWidthMeters = 5.0f  // Default spray width
+        val areaSqMeters = distanceMeters * sprayWidthMeters
+        val acres = areaSqMeters / 4046.86f
+        return String.format("%.2f acres", acres)
     }
 
     fun destroy() {

@@ -82,6 +82,9 @@ data class TelemetryState(
     val missionCompleted: Boolean = false,
     val missionCompletedHandled: Boolean = false, // Tracks if the completion popup was already shown
     val totalDistanceMeters: Float? = null,
+
+    // Crop type for agricultural missions
+    val cropType: String? = null,
     // Formatted speed values for UI
     val formattedAirspeed: String? = null,
     val formattedGroundspeed: String? = null,
