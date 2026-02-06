@@ -391,6 +391,7 @@ class SharedViewModel : ViewModel() {
         completed: Boolean = false
     ) {
         _telemetryState.value = _telemetryState.value.copy(
+            isMissionActive = isActive,
             missionElapsedSec = if (isActive) elapsedSeconds else null,
             totalDistanceMeters = if (isActive || completed) distanceMeters else null,
             missionCompleted = completed,
@@ -1755,7 +1756,7 @@ class SharedViewModel : ViewModel() {
 
     fun startMission(onResult: (Boolean, String?) -> Unit = { _, _ -> }) {
         viewModelScope.launch {
-            _telemetryState.value = _telemetryState.value.copy(missionCompleted = false, missionCompletedHandled = false, missionElapsedSec = null)
+            _telemetryState.value = _telemetryState.value.copy(isMissionActive = false, missionCompleted = false, missionCompletedHandled = false, missionElapsedSec = null)
             try {
                 Log.i("SharedVM", "Starting mission start sequence...")
 

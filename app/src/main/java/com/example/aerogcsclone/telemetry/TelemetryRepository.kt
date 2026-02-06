@@ -870,7 +870,7 @@ class MavlinkTelemetryRepository(
                             missionTimerJob?.cancel()
                             missionTimerJob = scope.launch {
                                 var elapsed = 0L
-                                _state.update { it.copy(missionElapsedSec = 0L, missionCompleted = false, lastMissionElapsedSec = null, missionCompletedHandled = false) }
+                                _state.update { it.copy(isMissionActive = true, missionElapsedSec = 0L, missionCompleted = false, lastMissionElapsedSec = null, missionCompletedHandled = false) }
 
                                 while (isActive && state.value.mode?.equals("Auto", ignoreCase = true) == true && state.value.armed) {
                                     delay(1000)
@@ -919,7 +919,7 @@ class MavlinkTelemetryRepository(
                                     val lastElapsed = state.value.missionElapsedSec
                                     // Only set missionCompleted if we had a meaningful mission (elapsed time > 0)
                                     if ((lastElapsed ?: 0L) > 0L) {
-                                        _state.update { it.copy(missionElapsedSec = null, missionCompleted = true, lastMissionElapsedSec = lastElapsed) }
+                                        _state.update { it.copy(isMissionActive = false, missionElapsedSec = null, missionCompleted = true, lastMissionElapsedSec = lastElapsed) }
 
                                         // âœ… Send mission status ENDED to backend (crash-safe)
                                         try {
@@ -964,7 +964,7 @@ class MavlinkTelemetryRepository(
 
                                     } else {
                                         // No meaningful mission - just reset state without triggering completion
-                                        _state.update { it.copy(missionElapsedSec = null) }
+                                        _state.update { it.copy(isMissionActive = false, missionElapsedSec = null) }
                                     }
                                 } else if (isPaused) {
                                 } else {
@@ -980,7 +980,7 @@ class MavlinkTelemetryRepository(
                             // Drone disarmed - cancel timer and DON'T show mission complete popup for disarm
                             missionTimerJob?.cancel()
                             missionTimerJob = null
-                            _state.update { it.copy(missionElapsedSec = null) }
+                            _state.update { it.copy(isMissionActive = false, missionElapsedSec = null) }
 
                             // Also disable spray when drone is disarmed for safety
                             sharedViewModel.disableSprayOnModeChange()

@@ -71,6 +71,11 @@ data class TelemetryState(
     val mode: String? = null,
     val armed: Boolean = false,
     val armable: Boolean = false,
+
+    // Simple boolean flag for mission active state - easy to use throughout the app
+    // True when flight tracking has started (drone armed + airborne/moving)
+    val isMissionActive: Boolean = false,
+
     // Mission timer (seconds elapsed since mission start, null if not running)
     val missionElapsedSec: Long? = null,
     val lastMissionElapsedSec: Long? = null,

@@ -300,46 +300,49 @@ private fun createDroneIconWithArrow(context: android.content.Context): BitmapDe
         // Draw a prominent arrow pointing upward (north/0°) to indicate the nose direction
         val arrowPaint = android.graphics.Paint().apply {
             isAntiAlias = true
-            color = android.graphics.Color.YELLOW
-            style = android.graphics.Paint.Style.FILL_AND_STROKE
-            strokeWidth = 2f
+            color = android.graphics.Color.rgb(255, 69, 0) // Orange-red for better visibility
+            style = android.graphics.Paint.Style.FILL
             strokeJoin = android.graphics.Paint.Join.ROUND
             strokeCap = android.graphics.Paint.Cap.ROUND
         }
 
-        // Create an equilateral triangle arrow - all sides equal length
+        // Create an isosceles triangle arrow - pointed and sleek for clear nose direction
         val centerX = sizePx / 2f
-        val triangleSize = sizePx * 0.35f  // Size of triangle sides
 
-        // Calculate equilateral triangle dimensions
-        // Height = side * sqrt(3)/2, but we'll position it for visual balance
-        val height = triangleSize * (sqrt(4.0) / 2.0).toFloat()
+        // Make it more pointed and sleek looking
+        val arrowLength = sizePx * 0.45f  // Longer for better direction indication
+        val arrowWidth = sizePx * 0.22f   // Narrower base for sleek look
 
-        // Position triangle in upper portion of icon for clear direction indication
-        val topY = sizePx * 0.15f  // Top vertex position
-        val bottomY = topY + height * 0.8f  // Bottom edge (slightly compressed for better look)
-        val leftX = centerX - triangleSize / 2f  // Left vertex
-        val rightX = centerX + triangleSize / 2f  // Right vertex
+        // Position triangle for optimal visibility
+        val topY = sizePx * 0.12f  // Sharp nose point at top
+        val bottomY = topY + arrowLength  // Extended length
+        val leftX = centerX - arrowWidth / 2f  // Left base corner
+        val rightX = centerX + arrowWidth / 2f  // Right base corner
 
-        // Define arrow path - equilateral triangle pointing upward
+        // Define arrow path - sleek isosceles triangle pointing upward
         val arrowPath = android.graphics.Path().apply {
-            // Top vertex (nose pointing up/north)
+            // Sharp nose point at top
             moveTo(centerX, topY)
-            // Bottom left vertex
+            // Left base corner
             lineTo(leftX, bottomY)
-            // Bottom right vertex
+            // Right base corner
             lineTo(rightX, bottomY)
-            // Close the path back to top vertex
+            // Close back to nose point
             close()
         }
 
         // Draw the arrow fill
         canvas.drawPath(arrowPath, arrowPaint)
 
-        // Add white border to arrow for better visibility and definition
+        // Add dark outline for definition
         arrowPaint.style = android.graphics.Paint.Style.STROKE
+        arrowPaint.color = android.graphics.Color.BLACK
+        arrowPaint.strokeWidth = 2f
+        canvas.drawPath(arrowPath, arrowPaint)
+
+        // Add white inner border for better contrast
         arrowPaint.color = android.graphics.Color.WHITE
-        arrowPaint.strokeWidth = 2.5f
+        arrowPaint.strokeWidth = 1f
         canvas.drawPath(arrowPath, arrowPaint)
 
         BitmapDescriptorFactory.fromBitmap(resultBitmap)
