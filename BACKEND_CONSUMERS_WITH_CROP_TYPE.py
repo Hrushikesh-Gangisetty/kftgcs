@@ -1,11 +1,9 @@
 """
-TelemetryConsumer - Fixed version with proper error handling
+Django Channels Consumer - Updated version with crop_type, project_name, plot_name
 Copy this to your Django backend: pavaman_gcs_app/consumers.py
 
-This version handles:
-- Missing Admin/Pilot gracefully (sends error message instead of crashing)
-- Better logging for debugging
-- Proper exception handling
+Changes made:
+- MissionSummary: Added project_name, plot_name, crop_type fields
 """
 
 import json
@@ -78,7 +76,6 @@ class TelemetryConsumer(AsyncWebsocketConsumer):
         # SESSION START
         # ==================================================
         if msg_type == "session_start":
-            # Send ACK immediately
             await self.send(json.dumps({"type": "session_ack"}))
             print("✅ session_ack sent", flush=True)
 
@@ -89,128 +86,41 @@ class TelemetryConsumer(AsyncWebsocketConsumer):
                 admin_id = data.get("admin_id")
                 plot_name = data.get("plot_name")
 
-                # 🔥 New fields for mission configuration
-                flight_mode = data.get("flight_mode", "AUTOMATIC")  # AUTOMATIC or MANUAL
-                mission_type = data.get("mission_type", "NONE")      # GRID or WAYPOINT
-                grid_setup_source = data.get("grid_setup_source", "NONE")  # KML_IMPORT, MAP_DRAW, DRONE_POSITION, RC_CONTROL
+                # 🔥 NEW: Get flight mode, mission type, grid setup source
+                flight_mode = data.get("flight_mode", "AUTOMATIC")
+                mission_type = data.get("mission_type", "NONE")
+                grid_setup_source = data.get("grid_setup_source", "NONE")
 
                 print(
-                    f"📋 vehicle={vehicle_id}, pilot={pilot_id}, admin={admin_id}, plot={plot_name}",
-                    flush=True
-                )
-                print(
-                    f"📋 flight_mode={flight_mode}, mission_type={mission_type}, grid_setup_source={grid_setup_source}",
+                    f"📋 vehicle={vehicle_id}, pilot={pilot_id}, admin={admin_id}, plot={plot_name}, "
+                    f"flight_mode={flight_mode}, mission_type={mission_type}, grid_source={grid_setup_source}",
                     flush=True
                 )
 
-                print(f"🔍 Looking up Admin(id={admin_id})...", flush=True)
+                admin = await sync_to_async(Admin.objects.get)(id=admin_id)
+                pilot = await sync_to_async(Pilot.objects.get)(id=pilot_id)
 
-                # ✅ FIXED: Handle missing Admin gracefully
-                try:
-                    admin = await sync_to_async(Admin.objects.get)(id=admin_id)
-                    print(f"✅ Admin found: id={admin_id}", flush=True)
-                except Admin.DoesNotExist:
-                    error_msg = f"Admin with id={admin_id} does not exist in database!"
-                    print(f"❌ {error_msg}", flush=True)
-                    logger.error(error_msg)
-                    await self.send(json.dumps({
-                        "type": "error",
-                        "message": error_msg
-                    }))
-                    await self.close()
-                    return
-                except Exception as e:
-                    error_msg = f"Error looking up Admin: {type(e).__name__}: {e}"
-                    print(f"❌ {error_msg}", flush=True)
-                    logger.exception(error_msg)
-                    await self.send(json.dumps({
-                        "type": "error",
-                        "message": error_msg
-                    }))
-                    await self.close()
-                    return
+                vehicle, _ = await sync_to_async(Vehicle.objects.get_or_create)(
+                    vehicle_id=vehicle_id,
+                    defaults={
+                        "vehicle_name": vehicle_name,
+                        "admin": admin,
+                        "pilot": pilot,
+                    }
+                )
 
-                print(f"🔍 Looking up Pilot(id={pilot_id})...", flush=True)
-
-                # ✅ FIXED: Handle missing Pilot gracefully
-                try:
-                    pilot = await sync_to_async(Pilot.objects.get)(id=pilot_id)
-                    print(f"✅ Pilot found: id={pilot_id}", flush=True)
-                except Pilot.DoesNotExist:
-                    error_msg = f"Pilot with id={pilot_id} does not exist in database!"
-                    print(f"❌ {error_msg}", flush=True)
-                    logger.error(error_msg)
-                    await self.send(json.dumps({
-                        "type": "error",
-                        "message": error_msg
-                    }))
-                    await self.close()
-                    return
-                except Exception as e:
-                    error_msg = f"Error looking up Pilot: {type(e).__name__}: {e}"
-                    print(f"❌ {error_msg}", flush=True)
-                    logger.exception(error_msg)
-                    await self.send(json.dumps({
-                        "type": "error",
-                        "message": error_msg
-                    }))
-                    await self.close()
-                    return
-
-                print(f"🔍 Getting/creating Vehicle(id={vehicle_id})...", flush=True)
-
-                try:
-                    vehicle, created = await sync_to_async(Vehicle.objects.get_or_create)(
-                        vehicle_id=vehicle_id,
-                        defaults={
-                            "vehicle_name": vehicle_name,
-                            "admin": admin,
-                            "pilot": pilot,
-                        }
-                    )
-                    if created:
-                        print(f"✅ Vehicle created: {vehicle_id}", flush=True)
-                    else:
-                        print(f"✅ Vehicle found: {vehicle_id}", flush=True)
-                except Exception as e:
-                    error_msg = f"Error with Vehicle: {type(e).__name__}: {e}"
-                    print(f"❌ {error_msg}", flush=True)
-                    logger.exception(error_msg)
-                    await self.send(json.dumps({
-                        "type": "error",
-                        "message": error_msg
-                    }))
-                    await self.close()
-                    return
-
-                print(f"🔍 Creating Mission...", flush=True)
-
-                # Create mission
-                try:
-                    mission = await sync_to_async(Mission.objects.create)(
-                        mission_id=uuid.uuid4(),
-                        vehicle=vehicle,
-                        admin=admin,
-                        pilot=pilot,
-                        start_time=now(),
-                        status=Mission.STATUS_CREATED,
-                        plot_name=plot_name,
-                        # 🔥 New mission configuration fields
-                        flight_mode=flight_mode,
-                        mission_type=mission_type,
-                        grid_setup_source=grid_setup_source,
-                    )
-                    print(f"✅ Mission created: {mission.mission_id}", flush=True)
-                except Exception as e:
-                    error_msg = f"Error creating Mission: {type(e).__name__}: {e}"
-                    print(f"❌ {error_msg}", flush=True)
-                    logger.exception(error_msg)
-                    await self.send(json.dumps({
-                        "type": "error",
-                        "message": error_msg
-                    }))
-                    await self.close()
-                    return
+                mission = await sync_to_async(Mission.objects.create)(
+                    mission_id=uuid.uuid4(),
+                    vehicle=vehicle,
+                    admin=admin,
+                    pilot=pilot,
+                    start_time=now(),
+                    status=Mission.STATUS_CREATED,
+                    plot_name=plot_name,
+                    flight_mode=flight_mode,
+                    mission_type=mission_type,
+                    grid_setup_source=grid_setup_source,
+                )
 
                 self.session = {
                     "mission": mission,
@@ -219,7 +129,6 @@ class TelemetryConsumer(AsyncWebsocketConsumer):
                     "pilot": pilot,
                 }
 
-                # Send mission_created with ID
                 await self.send(json.dumps({
                     "type": "mission_created",
                     "mission_id": str(mission.mission_id),
@@ -229,13 +138,8 @@ class TelemetryConsumer(AsyncWebsocketConsumer):
                 logger.info(f"Mission created {mission.mission_id}")
 
             except Exception as e:
-                error_msg = f"SESSION_START ERROR: {str(e)}"
-                print(f"❌ {error_msg}", flush=True)
+                print(f"❌ SESSION_START ERROR: {e}", flush=True)
                 logger.exception("SESSION_START failed")
-                await self.send(json.dumps({
-                    "type": "error",
-                    "message": error_msg
-                }))
                 await self.close()
 
         # ==================================================
@@ -371,7 +275,7 @@ class TelemetryConsumer(AsyncWebsocketConsumer):
             logger.info("Mission event saved")
 
         # ==================================================
-        # MISSION SUMMARY
+        # MISSION SUMMARY (with crop_type, project_name, plot_name)
         # ==================================================
         elif msg_type == "mission_summary":
             mission = self.session.get("mission")
@@ -380,6 +284,13 @@ class TelemetryConsumer(AsyncWebsocketConsumer):
                 return
 
             try:
+                # 🔥 Get project_name, plot_name, crop_type from Android message
+                project_name = data.get("project_name", "")
+                plot_name = data.get("plot_name", "")
+                crop_type = data.get("crop_type", "")
+
+                print(f"📋 Mission summary data: project={project_name}, plot={plot_name}, crop={crop_type}", flush=True)
+
                 summary, created = await sync_to_async(MissionSummary.objects.update_or_create)(
                     mission=mission,
                     defaults={
@@ -388,15 +299,20 @@ class TelemetryConsumer(AsyncWebsocketConsumer):
                         "pilot": self.session["pilot"],
                         "total_acres": data.get("total_acres"),
                         "total_spray_used_liters": data.get("total_spray_used"),
-                        "flying_time_sec": data.get("flying_time_minutes") * 60 if data.get("flying_time_minutes") else None,
+                        "flying_time_sec": data.get("flying_time_minutes", 0) * 60 if data.get("flying_time_minutes") else None,
                         "battery_start": data.get("battery_start"),
                         "battery_end": data.get("battery_end"),
+                        "alerts_count": data.get("alerts_count", 0),
                         "status": data.get("status", "COMPLETED"),
+                        # 🔥 NEW: Save project, plot, crop type from Android
+                        "project_name": project_name,
+                        "plot_name": plot_name,
+                        "crop_type": crop_type,
                     }
                 )
 
                 action = "created" if created else "updated"
-                print(f"✅ Mission summary {action}", flush=True)
+                print(f"✅ Mission summary {action} - project={project_name}, plot={plot_name}, crop={crop_type}", flush=True)
                 logger.info(f"Mission summary {action}")
 
             except Exception as e:

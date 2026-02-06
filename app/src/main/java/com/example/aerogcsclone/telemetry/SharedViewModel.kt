@@ -744,20 +744,13 @@ class SharedViewModel : ViewModel() {
 
     /**
      * Show the mission completion dialog with the given data
-     * Also disconnects the WebSocket as the mission has ended
+     * WebSocket stays connected until user clicks OK
      */
     fun showMissionCompletionDialog(totalTime: String, totalAcres: String, consumedLitres: String) {
         _missionCompletionData.value = MissionCompletionData(totalTime, totalAcres, consumedLitres)
         _showMissionCompletionDialog.value = true
         Log.i("SharedVM", "Mission completion dialog triggered - Time: $totalTime, Acres: $totalAcres, Litres: $consumedLitres")
-
-        // 🔌 Disconnect WebSocket when mission ends
-        try {
-            WebSocketManager.getInstance().disconnect()
-            Log.i("SharedVM", "🔌 WebSocket disconnected - Mission ended")
-        } catch (e: Exception) {
-            Log.e("SharedVM", "❌ Failed to disconnect WebSocket: ${e.message}", e)
-        }
+        // 🔌 WebSocket stays connected - will be disconnected when user clicks OK
     }
 
     /**
@@ -771,6 +764,7 @@ class SharedViewModel : ViewModel() {
     /**
      * Save the mission completion data with project, plot names, and crop type
      * Called when user clicks OK on the completion dialog
+     * This is when mission summary is sent and WebSocket connection is closed
      */
     fun saveMissionCompletionData(projectName: String, plotName: String, cropType: String) {
         _currentProjectName.value = projectName
@@ -778,6 +772,57 @@ class SharedViewModel : ViewModel() {
         _currentCropType.value = cropType
         _showMissionCompletionDialog.value = false
         Log.i("SharedVM", "Mission completion data saved - Project: $projectName, Plot: $plotName, CropType: $cropType")
+
+        // 🔥 Send mission summary with all data including crop type
+        try {
+            val wsManager = WebSocketManager.getInstance()
+            val currentState = _telemetryState.value
+            val completionData = _missionCompletionData.value
+
+            // Parse total acres from the completion data string (e.g., "0.13 acres")
+            val totalAcres = completionData.totalAcres
+                .replace(" acres", "")
+                .replace(" acre", "")
+                .toDoubleOrNull() ?: 0.0
+
+            // Parse total time from completion data string (e.g., "00:02:25") to minutes
+            val timeParts = completionData.totalTime.split(":")
+            val flyingTimeMinutes = if (timeParts.size == 3) {
+                val hours = timeParts[0].toIntOrNull() ?: 0
+                val minutes = timeParts[1].toIntOrNull() ?: 0
+                val seconds = timeParts[2].toIntOrNull() ?: 0
+                hours * 60.0 + minutes + seconds / 60.0
+            } else 0.0
+
+            val totalSprayUsed = currentState.sprayTelemetry.consumedLiters?.toDouble() ?: 0.0
+            val batteryEnd = currentState.batteryPercent ?: 0
+
+            wsManager.sendMissionSummary(
+                totalAcres = totalAcres,
+                totalSprayUsed = totalSprayUsed,
+                flyingTimeMinutes = flyingTimeMinutes,
+                averageSpeed = 0.0, // Average speed would need to be calculated
+                batteryStart = wsManager.missionBatteryStart,
+                batteryEnd = batteryEnd,
+                alertsCount = wsManager.missionAlertsCount,
+                status = "COMPLETED",
+                projectName = projectName,
+                plotName = plotName,
+                cropType = cropType
+            )
+            Log.i("SharedVM", "📤 Mission summary sent with cropType=$cropType")
+        } catch (e: Exception) {
+            Log.e("SharedVM", "❌ Failed to send mission summary: ${e.message}", e)
+        }
+
+        // 🔌 Disconnect WebSocket after sending summary
+        try {
+            WebSocketManager.getInstance().disconnect()
+            Log.i("SharedVM", "🔌 WebSocket disconnected - User clicked OK on mission completion dialog")
+        } catch (e: Exception) {
+            Log.e("SharedVM", "❌ Failed to disconnect WebSocket: ${e.message}", e)
+        }
+
         // The actual saving to database should be handled by TlogViewModel or MissionTemplateViewModel
     }
 

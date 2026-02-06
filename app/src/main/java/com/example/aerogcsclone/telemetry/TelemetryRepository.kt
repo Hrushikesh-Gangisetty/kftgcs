@@ -939,12 +939,13 @@ class MavlinkTelemetryRepository(
                                             val avgSpeed = if (flyingTimeMinutes > 0) (totalDistance / 1000.0) / (flyingTimeMinutes / 60.0) else 0.0 // km/h
                                             val totalSprayUsed = currentState.sprayTelemetry.consumedLiters?.toDouble() ?: 0.0
 
-                                            // Calculate area (approximate from distance and spray width - adjust as needed)
+                                            // Calculate total acres from distance and spray width
                                             val sprayWidthMeters = 5.0 // Default spray width, should come from settings
-                                            val totalArea = (totalDistance * sprayWidthMeters) / 10000.0 // Convert to hectares
+                                            val totalAreaSqMeters = totalDistance * sprayWidthMeters
+                                            val totalAcres = totalAreaSqMeters / 4046.86 // Convert square meters to acres
 
                                             wsManager.sendMissionSummary(
-                                                totalArea = totalArea,
+                                                totalAcres = totalAcres,
                                                 totalSprayUsed = totalSprayUsed,
                                                 flyingTimeMinutes = flyingTimeMinutes,
                                                 averageSpeed = avgSpeed,
@@ -957,10 +958,7 @@ class MavlinkTelemetryRepository(
                                         }
 
                                         // ðŸ”¥ Disconnect WebSocket when mission ends
-                                        try {
-                                            WebSocketManager.getInstance().disconnect()
-                                        } catch (e: Exception) {
-                                        }
+                                        // WebSocket stays connected until user clicks OK in dialog
 
                                     } else {
                                         // No meaningful mission - just reset state without triggering completion

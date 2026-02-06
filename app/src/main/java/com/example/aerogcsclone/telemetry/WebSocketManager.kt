@@ -669,7 +669,7 @@ class WebSocketManager {
 
     /**
      * Send mission summary to backend when mission ends
-     * @param totalArea Total area covered in the mission (sq meters or hectares)
+     * @param totalAcres Total area covered in acres
      * @param totalSprayUsed Total spray/liquid used (liters)
      * @param flyingTimeMinutes Total flying time in minutes
      * @param averageSpeed Average speed during mission (m/s)
@@ -677,16 +677,22 @@ class WebSocketManager {
      * @param batteryEnd Battery percentage at mission end
      * @param alertsCount Number of alerts/warnings during mission
      * @param status Mission completion status ("COMPLETED" or "FAILED")
+     * @param projectName Project name entered by user
+     * @param plotName Plot name entered by user
+     * @param cropType Crop type entered by user (optional)
      */
     fun sendMissionSummary(
-        totalArea: Double,
+        totalAcres: Double,
         totalSprayUsed: Double,
         flyingTimeMinutes: Double,
         averageSpeed: Double,
         batteryStart: Int,
         batteryEnd: Int,
         alertsCount: Int,
-        status: String  // "COMPLETED" or "FAILED"
+        status: String,  // "COMPLETED" or "FAILED"
+        projectName: String = "",
+        plotName: String = "",
+        cropType: String = ""
     ) {
         if (!isConnected || missionId == null) {
             Log.e(TAG, "⛔ Cannot send mission summary — socket not ready (connected=$isConnected, missionId=$missionId)")
@@ -705,7 +711,7 @@ class WebSocketManager {
                 put("mission_id", missionId)
                 put("drone_uid", resolveDroneUid())
 
-                put("total_area", totalArea)
+                put("total_acres", totalAcres)
                 put("total_spray_used", totalSprayUsed)
                 put("flying_time_minutes", flyingTimeMinutes)
                 put("average_speed", averageSpeed)
@@ -715,11 +721,17 @@ class WebSocketManager {
 
                 put("alerts_count", alertsCount)
                 put("status", status)  // COMPLETED / FAILED
+
+                // Additional fields from completion dialog
+                put("project_name", projectName)
+                put("plot_name", plotName)
+                put("crop_type", cropType)
             }
 
             webSocket.send(msg.toString())
-            Log.d(TAG, "📤 Mission summary sent: area=$totalArea, spray=$totalSprayUsed, time=$flyingTimeMinutes min, " +
-                "speed=$averageSpeed, battery=$batteryStart%→$batteryEnd%, alerts=$alertsCount, status=$status")
+            Log.d(TAG, "📤 Mission summary sent: acres=$totalAcres, spray=$totalSprayUsed, time=$flyingTimeMinutes min, " +
+                "speed=$averageSpeed, battery=$batteryStart%→$batteryEnd%, alerts=$alertsCount, status=$status, " +
+                "project=$projectName, plot=$plotName, crop=$cropType")
 
         } catch (e: Exception) {
             Log.e(TAG, "❌ Failed to send mission summary", e)
