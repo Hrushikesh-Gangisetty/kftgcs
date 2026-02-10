@@ -81,14 +81,104 @@ class SharedViewModel : ViewModel() {
         // 1. User navigates to SelectFlyingMethodScreen
         // 2. User explicitly clears the mission
         // 3. User uploads a new mission
+
+        // 🔥 AUTO-CONNECT WEBSOCKET: Observe isMissionActive and connect WebSocket automatically
+        // This handles cases where mission starts via AUTO mode (after uploading) without clicking Start Mission button
+        viewModelScope.launch {
+            var wasActive = false
+            _telemetryState.collect { state ->
+                val isActive = state.isMissionActive
+                if (isActive && !wasActive) {
+                    // Mission just became active - auto-connect WebSocket if not already connected
+                    onMissionBecameActive()
+                }
+                wasActive = isActive
+            }
+        }
+    }
+
+    /**
+     * Called automatically when isMissionActive transitions from false to true.
+     * This ensures WebSocket telemetry logging starts regardless of how the mission was initiated.
+     */
+    private fun onMissionBecameActive() {
+        Log.i("SharedVM", "🚀 Mission became active - checking WebSocket connection")
+        viewModelScope.launch {
+            try {
+                val wsManager = WebSocketManager.getInstance()
+                if (!wsManager.isConnected) {
+                    Log.i("SharedVM", "🔌 Auto-connecting WebSocket for active mission...")
+
+                    // 🔥 CRITICAL: Get latest pilotId and adminId from SessionManager
+                    GCSApplication.getInstance()?.let { app ->
+                        val pilotId = com.example.aerogcsclone.api.SessionManager.getPilotId(app)
+                        val adminId = com.example.aerogcsclone.api.SessionManager.getAdminId(app)
+                        wsManager.pilotId = pilotId
+                        wsManager.adminId = adminId
+                        Log.i("SharedVM", "📋 Auto-connect: Updated WebSocket credentials: pilotId=$pilotId, adminId=$adminId")
+
+                        if (pilotId <= 0) {
+                            Log.e("SharedVM", "⚠️ WARNING: pilotId=$pilotId - User may not be logged in! Telemetry will not be saved.")
+                        }
+                    }
+
+                    // 🔥 Set plot name before connecting
+                    wsManager.selectedPlotName = _currentPlotName.value
+                    Log.i("SharedVM", "📋 Auto-connect: Plot name set: ${_currentPlotName.value}")
+
+                    // 🔥 Set flight mode (Automatic or Manual)
+                    wsManager.selectedFlightMode = _userSelectedFlightMode.value.name
+                    Log.i("SharedVM", "📋 Auto-connect: Flight mode set: ${_userSelectedFlightMode.value.name}")
+
+                    // 🔥 Set mission type (Grid or Waypoint)
+                    wsManager.selectedMissionType = _selectedMissionType.value.name
+                    Log.i("SharedVM", "📋 Auto-connect: Mission type set: ${_selectedMissionType.value.name}")
+
+                    // 🔥 Set grid setup source
+                    wsManager.gridSetupSource = _gridSetupSource.value.name
+                    Log.i("SharedVM", "📋 Auto-connect: Grid setup source set: ${_gridSetupSource.value.name}")
+
+                    wsManager.connect()
+
+                    // Wait for WebSocket to connect
+                    var waitTime = 0
+                    while (!wsManager.isConnected && waitTime < 5000) {
+                        delay(100)
+                        waitTime += 100
+                    }
+
+                    if (wsManager.isConnected) {
+                        delay(500) // Give time for session_ack and mission_created
+                        Log.i("SharedVM", "✅ Auto-connect: WebSocket ready after ${waitTime}ms")
+
+                        // Send mission started status
+                        if (wsManager.missionId != null) {
+                            wsManager.sendMissionStatus(WebSocketManager.MISSION_STATUS_STARTED)
+                            wsManager.sendMissionEvent(
+                                eventType = "MISSION_STARTED",
+                                eventStatus = "INFO",
+                                description = "Mission started (auto-detected via mode change)"
+                            )
+                            Log.i("SharedVM", "✅ Auto-connect: Mission status STARTED sent to backend")
+                        }
+                    } else {
+                        Log.w("SharedVM", "⚠️ Auto-connect: WebSocket failed to connect within timeout")
+                    }
+                } else {
+                    Log.i("SharedVM", "✅ WebSocket already connected - no action needed")
+                }
+            } catch (e: Exception) {
+                Log.e("SharedVM", "❌ Auto-connect: Failed to connect WebSocket", e)
+            }
+        }
     }
 
     /**
      * Clear all mission-related waypoints and polygons from the map.
-     * Called when mission is completed.
+     * Called when mission is completed or when user navigates to select a new mode.
      */
     fun clearMissionFromMap() {
-        Log.i("SharedVM", "Clearing mission data from map")
+        Log.i("SharedVM", "Clearing mission data from map (including geofence)")
         _uploadedWaypoints.value = emptyList()
         _gridWaypoints.value = emptyList()
         _surveyPolygon.value = emptyList()
@@ -99,6 +189,22 @@ class SharedViewModel : ViewModel() {
         _missionAreaFormatted.value = "0 acres"
         _missionUploaded.value = false
         lastUploadedCount = 0
+
+        // Clear geofence when clearing mission
+        clearGeofence()
+    }
+
+    /**
+     * Clear the geofence polygon and disable geofence monitoring.
+     * Called when navigating away from mission or when user disables geofence.
+     */
+    fun clearGeofence() {
+        Log.i("SharedVM", "Clearing geofence")
+        _geofenceEnabled.value = false
+        _geofencePolygon.value = emptyList()
+        _homePosition.value = null
+        // Reset geofence warning/violation states
+        resetGeofenceState()
     }
 
     // Initialize TTS with context
@@ -282,7 +388,7 @@ class SharedViewModel : ViewModel() {
     private val _connectionType = mutableStateOf(ConnectionType.TCP)
     val connectionType: State<ConnectionType> = _connectionType
 
-    private val _ipAddress = mutableStateOf("10.0.2.2")
+    private val _ipAddress = mutableStateOf("65.0.76.31")
     val ipAddress: State<String> = _ipAddress
 
     private val _port = mutableStateOf("5762")
@@ -1442,8 +1548,18 @@ class SharedViewModel : ViewModel() {
                 )
             )
         } else {
+            // 🔥 FIX: CRITICAL - Reset ALL geofence state when disabling
+            // This ensures fresh state next time geofence is enabled
+            resetGeofenceState()
             _geofencePolygon.value = emptyList()
-            Log.i("Geofence", "Geofence DISABLED")
+            _homePosition.value = null
+            Log.i("Geofence", "Geofence DISABLED - all state reset")
+            addNotification(
+                Notification(
+                    message = "Geofence disabled",
+                    type = NotificationType.INFO
+                )
+            )
         }
     }
 
@@ -1508,6 +1624,33 @@ class SharedViewModel : ViewModel() {
             if (geofenceShape.size >= 3) {
                 _geofencePolygon.value = geofenceShape
                 Log.i("Geofence", "✓ Geofence ${if (_useSquareGeofence.value) "square" else "polygon"} generated successfully with ${geofenceShape.size} vertices")
+
+                // 🔥 VALIDATION: Verify all source waypoints are inside the generated geofence
+                var allInside = true
+                for ((index, wp) in allWaypoints.withIndex()) {
+                    val isInside = GeofenceUtils.isPointInPolygon(wp, geofenceShape)
+                    val distToEdge = GeofenceUtils.distanceToPolygonEdge(wp, geofenceShape)
+                    if (!isInside) {
+                        Log.e("Geofence", "❌ VALIDATION FAILED: Waypoint $index at ${wp.latitude}, ${wp.longitude} is OUTSIDE generated geofence!")
+                        allInside = false
+                    } else {
+                        Log.d("Geofence", "✓ Waypoint $index inside geofence, ${String.format("%.1f", distToEdge)}m from edge")
+                    }
+                }
+
+                if (!allInside) {
+                    Log.e("Geofence", "⚠️ WARNING: Some waypoints are outside the geofence! Buffer may be too small.")
+                    // Increase buffer and regenerate
+                    val largerBuffer = bufferDistance + 5.0
+                    Log.i("Geofence", "Attempting to regenerate with larger buffer: ${largerBuffer}m")
+                    val largerGeofence = if (_useSquareGeofence.value) {
+                        GeofenceUtils.generateSquareGeofence(allWaypoints, largerBuffer)
+                    } else {
+                        GeofenceUtils.generatePolygonBuffer(allWaypoints, largerBuffer)
+                    }
+                    _geofencePolygon.value = largerGeofence
+                    Log.i("Geofence", "✓ Regenerated geofence with larger buffer")
+                }
             } else {
                 Log.w("Geofence", "Failed to generate valid geofence")
                 _geofencePolygon.value = emptyList()
@@ -3042,14 +3185,15 @@ class SharedViewModel : ViewModel() {
     companion object {
         // Minimum buffer distance - triggers even when stationary
         // This is the absolute minimum distance from fence before triggering
-        // Set to 2m so drone starts braking at 2-3m and stops near the outer fence (4m)
-        private const val MIN_BUFFER_METERS = 3.5  // Start braking at 2m from inner fence
+        // Reduced from 3.5m to 2.0m to prevent early breach detection
+        // This allows drone to hover within 2m of fence edge before warning
+        private const val MIN_BUFFER_METERS = 2.0  // Minimum buffer when stationary
 
         // Maximum buffer distance - caps the dynamic buffer at high speeds
-        private const val MAX_BUFFER_METERS = 9.0  // Maximum 12m buffer for high speed scenarios
+        private const val MAX_BUFFER_METERS = 8.0  // Maximum buffer for high speed scenarios
 
         // Maximum deceleration capability (m/s²) - conservative estimate for multicopters
-        // Using 3.0 for safe braking estimate (drones can do 3-5, but wind/load affects this)
+        // Using 5.5 for realistic braking estimate (drones can do 3-5, but wind/load affects this)
         private const val MAX_DECEL_M_S2 = 5.5  // Conservative deceleration
 
         // System latency in seconds (GPS + telemetry + command execution)
@@ -3057,7 +3201,7 @@ class SharedViewModel : ViewModel() {
         private const val SYSTEM_LATENCY_SECONDS = 0.5  // 500ms total latency
 
         // Safety margin multiplier for stopping distance (accounts for uncertainties)
-        private const val STOPPING_DISTANCE_SAFETY_FACTOR = 1.3  // 30% safety margin
+        private const val STOPPING_DISTANCE_SAFETY_FACTOR = 1.2  // 20% safety margin (reduced from 30%)
 
         // ULTRA High frequency monitoring interval - 10ms = 100 checks per second
         private const val GEOFENCE_MONITOR_INTERVAL_MS = 5L
@@ -3158,13 +3302,13 @@ class SharedViewModel : ViewModel() {
      *
      * This ensures the drone triggers brake EARLY ENOUGH to stop before the fence,
      * accounting for GPS, telemetry, and command execution delays.
-     * With 3m min buffer, drone will stop near the outer fence (2m offset).
      *
-     * Examples at different speeds:
-     * - 0 m/s:  3m (minimum buffer only - stops at outer fence)
-     * - 3 m/s:  3 + 1.5 + 1.95 = 6.45m
-     * - 5 m/s:  3 + 2.5 + 5.42 = 10.92m
-     * - 8 m/s:  3 + 4.0 + 13.87 = capped at 12m
+     * Examples at different speeds (with MIN_BUFFER=2m, decel=5.5m/s², latency=0.5s, safety=1.2):
+     * - 0 m/s:  2.0m (minimum buffer only - allows hovering close to fence)
+     * - 2 m/s:  2 + 1.0 + 0.44 = 3.44m
+     * - 3 m/s:  2 + 1.5 + 0.98 = 4.48m
+     * - 5 m/s:  2 + 2.5 + 2.73 = 7.23m
+     * - 8 m/s:  2 + 4.0 + 6.98 = capped at 8m
      */
     private fun calculateDynamicBuffer(currentSpeedMs: Float, altitudeMeters: Float = 0f): Double {
         if (currentSpeedMs <= 0) {
@@ -3215,6 +3359,9 @@ class SharedViewModel : ViewModel() {
         // Skip if drone is not armed (no need to enforce geofence when disarmed)
         if (!currentState.armed) return
 
+        // 🔥 FIX: Get current mode - important for debugging
+        val currentMode = currentState.mode
+
         val dronePosition = LatLng(droneLat, droneLon)
         val currentSpeed = currentState.groundspeed ?: 0f
         val currentAltitude = currentState.altitudeRelative ?: 0f
@@ -3231,28 +3378,22 @@ class SharedViewModel : ViewModel() {
         val now = System.currentTimeMillis()
         if (now - lastLogTime > 500) {
             lastLogTime = now
-            Log.d("Geofence", "📍 MONITOR: inside=$isInsideFence, dist=${String.format("%.1f", distanceToFence)}m, dynamicBuffer=${String.format("%.1f", dynamicBuffer)}m, speed=${String.format("%.1f", currentSpeed)}m/s, alt=${String.format("%.1f", currentAltitude)}m, actionTaken=$geofenceActionTaken")
+            Log.d("Geofence", "📍 MONITOR: mode=$currentMode inside=$isInsideFence, dist=${String.format("%.1f", distanceToFence)}m, buffer=${String.format("%.1f", dynamicBuffer)}m, speed=${String.format("%.1f", currentSpeed)}m/s, actionTaken=$geofenceActionTaken")
         }
 
         // ═══ MISSION PLANNER / ARDUPILOT STYLE FENCE LOGIC ═══
-        // BREACH if: distance is 0 (outside fence) OR within dynamic buffer distance
+        // 🔥 FIX: Only trigger BRAKE/RTL for ACTUAL breach (drone outside fence)
+        // Being close to the edge (within buffer) should only WARN, not trigger RTL
+        // This prevents false positives when drone is flying to waypoints near the edge
         val isOutsideFence = distanceToFence == 0.0
-        val isWithinBuffer = distanceToFence > 0 && distanceToFence <= dynamicBuffer
-        val shouldTriggerAction = isOutsideFence || isWithinBuffer
+        val isWithinBuffer = isInsideFence && distanceToFence <= dynamicBuffer
 
-        if (shouldTriggerAction) {
-            // Log IMMEDIATELY when trigger condition is met
-            if (isOutsideFence) {
-                Log.e("Geofence", "🔴 HARD BREACH! OUTSIDE FENCE! dist=${String.format("%.1f", distanceToFence)}m")
-            } else {
-                Log.e("Geofence", "🔴 BUFFER BREACH! dist=${String.format("%.1f", distanceToFence)}m (within ${String.format("%.1f", dynamicBuffer)}m buffer at ${String.format("%.1f", currentSpeed)}m/s)")
-            }
+        // CASE 1: ACTUAL BREACH - drone is OUTSIDE the fence polygon
+        if (isOutsideFence) {
+            Log.e("Geofence", "🔴 HARD BREACH! DRONE IS OUTSIDE FENCE!")
 
             _geofenceWarningTriggered.value = true
-
-            if (isOutsideFence) {
-                _geofenceViolationDetected.value = true
-            }
+            _geofenceViolationDetected.value = true
 
             // FIRST TIME: Send BRAKE then RTL
             if (!geofenceActionTaken) {
@@ -3260,12 +3401,8 @@ class SharedViewModel : ViewModel() {
                 rtlInitiated = false // Will be set to true once RTL process starts
                 lastBrakeCommandTime = now
 
-                if (isOutsideFence) {
-                    Log.e("Geofence", "🚨🚨🚨 BREACH DETECTED! Outside fence - EMERGENCY BRAKE + RTL! 🚨🚨🚨")
-                    Log.e("Geofence", "Position: $droneLat, $droneLon")
-                } else {
-                    Log.w("Geofence", "⚠️⚠️⚠️ TOO CLOSE TO FENCE! Distance: ${String.format("%.1f", distanceToFence)}m (buffer: ${String.format("%.1f", dynamicBuffer)}m) - EMERGENCY STOP!")
-                }
+                Log.e("Geofence", "🚨🚨🚨 BREACH DETECTED! Outside fence - EMERGENCY BRAKE + RTL! 🚨🚨🚨")
+                Log.e("Geofence", "Position: $droneLat, $droneLon")
 
                 // Send BRAKE then RTL - this will set rtlInitiated = true
                 sendEmergencyBrakeAndRTLBurst()
@@ -3277,6 +3414,24 @@ class SharedViewModel : ViewModel() {
                 lastBrakeCommandTime = now
                 sendBrakeCommandImmediate()
             }
+        }
+        // CASE 2: WARNING - drone is INSIDE fence but close to edge
+        // 🔥 FIX: Only show warning, DO NOT trigger RTL
+        else if (isWithinBuffer) {
+            // Set warning state for UI indication (yellow border, etc.)
+            if (!_geofenceWarningTriggered.value) {
+                Log.w("Geofence", "⚠️ WARNING: Close to fence edge! dist=${String.format("%.1f", distanceToFence)}m (buffer: ${String.format("%.1f", dynamicBuffer)}m)")
+                _geofenceWarningTriggered.value = true
+                // Only notify once per warning event
+                addNotification(
+                    Notification(
+                        message = "⚠️ Warning: Approaching geofence boundary",
+                        type = NotificationType.WARNING
+                    )
+                )
+            }
+            // DO NOT send BRAKE or RTL - drone is still inside the fence
+            // This is just a warning to the pilot
         }
 
         // Reset state when safely back inside
@@ -3295,12 +3450,12 @@ class SharedViewModel : ViewModel() {
             _geofenceViolationDetected.value = false
         }
 
-        // Stage 2: Full reset only when safely inside (3x max buffer from edge)
+        // Stage 2: Clear warning when beyond the buffer zone (plus some hysteresis)
         // This clears the warning UI state
-        val resetThreshold = MAX_BUFFER_METERS * 3.0
-        if (isInsideFence && distanceToFence > resetThreshold) {
+        val warningClearThreshold = dynamicBuffer * 1.5  // 50% hysteresis
+        if (isInsideFence && distanceToFence > warningClearThreshold) {
             if (_geofenceWarningTriggered.value) {
-                Log.i("Geofence", "✓ Drone safely inside fence (${String.format("%.1f", distanceToFence)}m from edge) - Warning cleared")
+                Log.i("Geofence", "✓ Drone safely away from fence edge (${String.format("%.1f", distanceToFence)}m) - Warning cleared")
                 _geofenceWarningTriggered.value = false
             }
         }
