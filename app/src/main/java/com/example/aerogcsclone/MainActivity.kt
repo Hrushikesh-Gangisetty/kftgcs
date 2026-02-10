@@ -101,7 +101,12 @@ class MainActivity : ComponentActivity() {
         // ✅ Pre-set the values on WebSocketManager (connection happens on mission start)
         wsManager.pilotId = pilotId
         wsManager.adminId = adminId
-        wsManager.droneUid = "SITL_DRONE_001"  // Default fallback, will be updated when FC sends AUTOPILOT_VERSION
+        wsManager.droneUid = ""  // Will be updated when FC sends AUTOPILOT_VERSION (leave blank to force real UID)
+
+        if (BuildConfig.DEBUG) {
+            android.util.Log.d("MAIN_ACTIVITY", "🔧 WebSocketManager initialized with pilotId=$pilotId, adminId=$adminId")
+            android.util.Log.d("MAIN_ACTIVITY", "⏳ Waiting for AUTOPILOT_VERSION to set real drone UID...")
+        }
 
         // ✅ Throttled telemetry sender - sends every 1 second (only when connected)
         Handler(Looper.getMainLooper()).postDelayed(object : Runnable {
@@ -177,7 +182,13 @@ class MainActivity : ComponentActivity() {
                         telemetryState.droneUid?.let { uid ->
                             if (wsManager.droneUid != uid) {
                                 wsManager.droneUid = uid
-                                android.util.Log.i("WebSocketTelemetry", "🔥 DroneUID set: $uid")
+                                android.util.Log.i("WebSocketTelemetry", "✅ DroneUID received from FC: $uid")
+                                android.util.Log.i("WebSocketTelemetry", "🔥 Real drone ID will be used for all backend communication")
+                            }
+                        } ?: run {
+                            // Log if we haven't received drone UID yet
+                            if (wsManager.droneUid.isBlank() && BuildConfig.DEBUG) {
+                                android.util.Log.d("WebSocketTelemetry", "⏳ Still waiting for AUTOPILOT_VERSION from FC...")
                             }
                         }
 

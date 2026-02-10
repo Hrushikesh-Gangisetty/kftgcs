@@ -160,6 +160,14 @@ class WebSocketManager {
 
     // 🔥 Drone UID - Real drone identifier from Flight Controller
     var droneUid: String = ""  // Set from TelemetryState / FC AUTOPILOT_VERSION
+        set(value) {
+            val oldValue = field
+            field = value
+            // 🔥 If droneUid was updated while connected, send update to backend
+            if (value.isNotBlank() && oldValue != value && isConnected && missionId != null) {
+                sendDroneUidUpdate(value)
+            }
+        }
 
     // 🔥 Plot name - Selected plot/field name from UI
     var selectedPlotName: String = ""  // Set from UI when mission starts
@@ -307,6 +315,17 @@ class WebSocketManager {
             missionBatteryStart = batteryRemaining  // Capture current battery as start
             Log.d(TAG, "📊 Mission stats reset - Battery start: $missionBatteryStart%")
 
+            // 🔥 Resolve drone UID and log details
+            val droneUidToSend = resolveDroneUid()
+            val isFallback = droneUid.isBlank()
+            Log.d(TAG, "📋 Session Details:")
+            Log.d(TAG, "   - Admin ID: $adminId")
+            Log.d(TAG, "   - Pilot ID: $pilotId")
+            Log.d(TAG, "   - Drone UID: $droneUidToSend ${if (isFallback) "(⚠️ FALLBACK - FC not yet identified)" else "(✅ REAL FC UID)"}")
+            Log.d(TAG, "   - Plot: $selectedPlotName")
+            Log.d(TAG, "   - Flight Mode: $selectedFlightMode")
+            Log.d(TAG, "   - Mission Type: $selectedMissionType")
+
             try {
                 val sessionStart = JSONObject().apply {
                     put("type", "session_start")
@@ -314,7 +333,7 @@ class WebSocketManager {
                     put("admin_id", adminId)
                     put("pilot_id", pilotId)
                     // 🔥 REAL DRONE ID from Flight Controller (with SITL fallback)
-                    put("drone_uid", resolveDroneUid())
+                    put("drone_uid", droneUidToSend)
                     // 🔥 Plot name from UI
                     put("plot_name", selectedPlotName)
                     // 🔥 Flight mode - Automatic or Manual
@@ -497,6 +516,30 @@ class WebSocketManager {
             if (shouldReconnect) {
                 scheduleReconnect("server_closed_$code")
             }
+        }
+    }
+
+    /**
+     * Send drone UID update to backend when real UID becomes available after session_start
+     * This handles the timing issue where session_start is sent before AUTOPILOT_VERSION is received
+     */
+    private fun sendDroneUidUpdate(realDroneUid: String) {
+        if (!isConnected || !::webSocket.isInitialized) {
+            Log.w(TAG, "⚠️ Cannot send drone_uid_update - not connected")
+            return
+        }
+
+        try {
+            val msg = JSONObject().apply {
+                put("type", "drone_uid_update")
+                put("mission_id", missionId)
+                put("drone_uid", realDroneUid)
+            }
+            val sent = webSocket.send(msg.toString())
+            Log.i(TAG, "📤🔥 Sent drone_uid_update: mission=$missionId, droneUid=$realDroneUid (sent=$sent)")
+            Log.i(TAG, "✅ Backend should now update vehicle_id from SITL_DRONE_001 to real UID: $realDroneUid")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Failed to send drone_uid_update: ${e.message}", e)
         }
     }
 
@@ -831,4 +874,3 @@ class WebSocketManager {
         connect()
     }
 }
-

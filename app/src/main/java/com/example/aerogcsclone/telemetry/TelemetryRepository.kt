@@ -1,5 +1,6 @@
 ﻿package com.example.aerogcsclone.telemetry
 
+import android.util.Log
 import com.divpundir.mavlink.adapters.coroutines.asCoroutine
 import com.divpundir.mavlink.adapters.coroutines.tryConnect
 import com.divpundir.mavlink.adapters.coroutines.trySendUnsignedV2
@@ -135,7 +136,9 @@ class MavlinkTelemetryRepository(
 
     // Zero flow detection for tank empty (when sprayer is ON but flow is 0)
     private var zeroFlowStartTime: Long? = null
-    private val ZERO_FLOW_THRESHOLD_MS = 1500L // 1.5 seconds of zero flow = tank empty
+    private var pumpTurnedOnTime: Long? = null  // Track when pump was turned ON for initial delay
+    private val ZERO_FLOW_THRESHOLD_MS = 3000L // 3 seconds of zero flow = tank empty (increased for reliability)
+    private val PUMP_STARTUP_DELAY_MS = 2000L  // 2 second delay after pump turns ON before checking flow
 
     // MAG_CAL_PROGRESS flow for compass calibration progress
     private val _magCalProgress = MutableSharedFlow<MagCalProgress>(replay = 0, extraBufferCapacity = 10)
@@ -621,42 +624,72 @@ class MavlinkTelemetryRepository(
                             )
                         }
 
-                        // â•â•â• FLOW-BASED TANK EMPTY DETECTION â•â•â•
+                        // ╔══╗ FLOW-BASED TANK EMPTY DETECTION ╔══╗
                         // Tank is considered empty when:
                         // 1. Sprayer is ON (rc7 enabled)
-                        // 2. Flow rate is 0 for 1.5+ seconds
+                        // 2. Flow rate is 0 for 3+ seconds
                         // 3. BATT2 is properly configured
                         val currentSprayEnabledForEmpty = state.value.sprayTelemetry.sprayEnabled
                         val configValid = state.value.sprayTelemetry.configurationValid
                         val flowIsZero = flowRateLiterPerMin == null || flowRateLiterPerMin == 0f
 
-                        if (currentSprayEnabledForEmpty && configValid && flowIsZero) {
-                            // Sprayer is ON but no flow - start/continue timing
-                            if (zeroFlowStartTime == null) {
-                                zeroFlowStartTime = System.currentTimeMillis()
-                            } else {
-                                val zeroFlowDuration = System.currentTimeMillis() - zeroFlowStartTime!!
+                        // Tank empty detection is based on spray enabled status (RC7) and flow rate
+                        // No need to check pump current - we use flow sensor data directly
+                        val sprayerIsOn = currentSprayEnabledForEmpty
 
-                                if (zeroFlowDuration >= ZERO_FLOW_THRESHOLD_MS && !tankEmptyNotificationShown) {
-                                    sharedViewModel.addNotification(
-                                        Notification(
-                                            message = "Tank Empty! Sprayer is ON but no flow detected.",
-                                            type = NotificationType.WARNING
+                        if (sprayerIsOn && configValid) {
+                            // Track when sprayer was turned ON
+                            if (pumpTurnedOnTime == null) {
+                                pumpTurnedOnTime = System.currentTimeMillis()
+                                Log.d("TankEmpty", "⏱️ Sprayer turned ON - waiting ${PUMP_STARTUP_DELAY_MS}ms before checking flow")
+                            }
+
+                            val timeSincePumpOn = System.currentTimeMillis() - (pumpTurnedOnTime ?: 0L)
+
+                            // Only check for zero flow after pump startup delay
+                            if (timeSincePumpOn >= PUMP_STARTUP_DELAY_MS && flowIsZero) {
+                                // Sprayer has been ON long enough and still no flow - start/continue timing
+                                if (zeroFlowStartTime == null) {
+                                    zeroFlowStartTime = System.currentTimeMillis()
+                                    Log.d("TankEmpty", "⏱️ Zero flow timer started - sprayer is ON for ${timeSincePumpOn}ms but no flow detected")
+                                } else {
+                                    val zeroFlowDuration = System.currentTimeMillis() - zeroFlowStartTime!!
+
+                                    if (zeroFlowDuration >= ZERO_FLOW_THRESHOLD_MS && !tankEmptyNotificationShown) {
+                                        Log.w("TankEmpty", "🚨 TANK EMPTY! Sprayer ON for ${timeSincePumpOn}ms with ${zeroFlowDuration}ms of zero flow")
+                                        sharedViewModel.addNotification(
+                                            Notification(
+                                                message = "Tank Empty! Sprayer is ON but no flow detected.",
+                                                type = NotificationType.WARNING
+                                            )
                                         )
-                                    )
-                                    sharedViewModel.announceTankEmpty()
-                                    tankEmptyNotificationShown = true
+                                        sharedViewModel.announceTankEmpty()
+                                        tankEmptyNotificationShown = true
+                                    }
+                                }
+                            } else if (!flowIsZero) {
+                                // Flow detected - reset zero flow timer
+                                if (zeroFlowStartTime != null) {
+                                    Log.d("TankEmpty", "⏱️ Zero flow timer reset - flow detected (${String.format("%.2f", flowRateLiterPerMin ?: 0f)} L/min)")
+                                    zeroFlowStartTime = null
+                                }
+
+                                // Reset tank empty notification if flow is detected again (tank refilled)
+                                if (tankEmptyNotificationShown) {
+                                    Log.i("TankEmpty", "✓ Flow restored - tank refilled")
+                                    tankEmptyNotificationShown = false
                                 }
                             }
                         } else {
-                            // Reset zero flow timer if sprayer is OFF or flow is detected
-                            if (zeroFlowStartTime != null) {
+                            // Sprayer is OFF or config invalid - reset all timers
+                            if (pumpTurnedOnTime != null || zeroFlowStartTime != null) {
+                                val reason = when {
+                                    !sprayerIsOn -> "sprayer disabled"
+                                    else -> "config invalid"
+                                }
+                                Log.d("TankEmpty", "⏱️ All timers reset - $reason")
+                                pumpTurnedOnTime = null
                                 zeroFlowStartTime = null
-                            }
-
-                            // Reset tank empty notification if flow is detected again (tank refilled)
-                            if (!flowIsZero && tankEmptyNotificationShown) {
-                                tankEmptyNotificationShown = false
                             }
                         }
                     }
@@ -1422,14 +1455,21 @@ class MavlinkTelemetryRepository(
                 .filterIsInstance<AutopilotVersion>()
                 .collect { autopilotVersion ->
                     try {
+                        Log.i("TelemetryRepo", "📥 AUTOPILOT_VERSION received from FC")
+
                         // Extract UID - prefer uid2 over uid if uid2 is non-zero
                         val primaryUid = if (autopilotVersion.uid2.any { it.toInt() != 0 }) {
                             // Convert uid2 (18 bytes) to hex string
-                            autopilotVersion.uid2.joinToString("") { "%02x".format(it.toInt() and 0xFF) }
+                            val uid = autopilotVersion.uid2.joinToString("") { "%02x".format(it.toInt() and 0xFF) }
+                            Log.i("TelemetryRepo", "✅ Extracted UID from uid2: $uid")
+                            uid
                         } else if (autopilotVersion.uid != 0UL) {
                             // Convert uid (8 bytes) to hex string
-                            "%016x".format(autopilotVersion.uid)
+                            val uid = "%016x".format(autopilotVersion.uid)
+                            Log.i("TelemetryRepo", "✅ Extracted UID from uid: $uid")
+                            uid
                         } else {
+                            Log.w("TelemetryRepo", "⚠️ No UID found in AUTOPILOT_VERSION (uid2 and uid are both zero)")
                             null
                         }
 
@@ -1449,6 +1489,7 @@ class MavlinkTelemetryRepository(
                         val formattedFirmware = "$major.$minor.$patch (type: $fwType)"
 
                         if (secondaryUid != null) {
+                            Log.d("TelemetryRepo", "Secondary UID available: $secondaryUid")
                         }
 
                         _state.update { state ->
@@ -1466,9 +1507,11 @@ class MavlinkTelemetryRepository(
                         if (primaryUid != null) {
                             val shortUid = primaryUid.takeLast(8) // Last 8 characters for brevity
                             sharedViewModel.speak("Drone identified. UID ending in $shortUid")
+                            Log.i("TelemetryRepo", "🎤 Announced drone UID via TTS")
                         }
 
                     } catch (e: Exception) {
+                        Log.e("TelemetryRepo", "❌ Error processing AUTOPILOT_VERSION", e)
                     }
                 }
         }
