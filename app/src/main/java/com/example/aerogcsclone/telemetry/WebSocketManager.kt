@@ -345,9 +345,19 @@ class WebSocketManager {
             Log.d(TAG, "   - Mission Type: $selectedMissionType")
 
             try {
+                // 🔥 FIX: Generate unique vehicle name to avoid database constraint violations
+                // Use drone UID as vehicle name, or fallback to timestamp-based unique name
+                val uniqueVehicleName = if (droneUidToSend.isNotBlank() && droneUidToSend != "SITL_DRONE_001") {
+                    droneUidToSend.take(50) // Limit length to avoid DB field size issues
+                } else {
+                    "DRONE_${System.currentTimeMillis()}" // Timestamp-based fallback
+                }
+
+                Log.d(TAG, "🔥 Using unique vehicle name: '$uniqueVehicleName' (was: DRONE_01)")
+
                 val sessionStart = JSONObject().apply {
                     put("type", "session_start")
-                    put("vehicle_name", "DRONE_01") // MUST match DB
+                    put("vehicle_name", uniqueVehicleName) // 🔥 UNIQUE vehicle name
                     put("admin_id", adminId)
                     put("pilot_id", pilotId)
                     // 🔥 REAL DRONE ID from Flight Controller (with SITL fallback)

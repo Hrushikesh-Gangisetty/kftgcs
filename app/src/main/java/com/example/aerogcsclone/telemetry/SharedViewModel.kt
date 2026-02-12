@@ -3379,36 +3379,36 @@ class SharedViewModel : ViewModel() {
     companion object {
         // Minimum buffer distance - triggers even when stationary
         // This is the absolute minimum distance from fence before triggering
-        // Reduced from 3.5m to 2.0m to prevent early breach detection
-        // This allows drone to hover within 2m of fence edge before warning
-        private const val MIN_BUFFER_METERS = 2.0  // Minimum buffer when stationary
+        // Increased to 3.0m for better safety margin
+        private const val MIN_BUFFER_METERS = 3.0  // Minimum buffer when stationary
 
         // Maximum buffer distance - caps the dynamic buffer at high speeds
-        private const val MAX_BUFFER_METERS = 8.0  // Maximum buffer for high speed scenarios
+        // Increased to 15m for high-speed scenarios to ensure drone can stop before fence
+        private const val MAX_BUFFER_METERS = 15.0  // Maximum buffer for high speed scenarios
 
         // Maximum deceleration capability (m/s²) - conservative estimate for multicopters
-        // Using 5.5 for realistic braking estimate (drones can do 3-5, but wind/load affects this)
-        private const val MAX_DECEL_M_S2 = 5.5  // Conservative deceleration
+        // Using 3.5 for more realistic braking estimate (accounts for wind, load, reaction time)
+        private const val MAX_DECEL_M_S2 = 3.5  // Conservative deceleration
 
         // System latency in seconds (GPS + telemetry + command execution)
-        // GPS: ~200ms, Telemetry: ~100ms, Command: ~200ms = ~500ms total
-        private const val SYSTEM_LATENCY_SECONDS = 0.5  // 500ms total latency
+        // GPS: ~200ms, Telemetry: ~200ms, Command: ~300ms = ~700ms total
+        private const val SYSTEM_LATENCY_SECONDS = 0.7  // 700ms total latency (more conservative)
 
         // Safety margin multiplier for stopping distance (accounts for uncertainties)
-        private const val STOPPING_DISTANCE_SAFETY_FACTOR = 1.2  // 20% safety margin (reduced from 30%)
+        private const val STOPPING_DISTANCE_SAFETY_FACTOR = 1.5  // 50% safety margin for high speed
 
-        // Breach confirmation - require sustained breach before RTL to prevent GPS glitches
-        private const val BREACH_CONFIRMATION_SAMPLES = 5 // Number of consecutive breach samples required
-        private const val BREACH_CONFIRMATION_TIME_MS = 500L // 500ms window for breach confirmation
+        // Breach confirmation - reduced to 2 samples for faster response at high speed
+        private const val BREACH_CONFIRMATION_SAMPLES = 2 // Number of consecutive breach samples required
+        private const val BREACH_CONFIRMATION_TIME_MS = 200L // 200ms window for breach confirmation
 
-        // ULTRA High frequency monitoring interval - 10ms = 100 checks per second
+        // ULTRA High frequency monitoring interval - 5ms = 200 checks per second
         private const val GEOFENCE_MONITOR_INTERVAL_MS = 5L
 
         // Continuous command sending interval when breached - VERY AGGRESSIVE
-        private const val BRAKE_COMMAND_INTERVAL_MS = 50L
+        private const val BRAKE_COMMAND_INTERVAL_MS = 30L
 
         // Number of consecutive commands to send on first breach
-        private const val EMERGENCY_COMMAND_BURST_COUNT = 5
+        private const val EMERGENCY_COMMAND_BURST_COUNT = 10
     }
 
     private val _geofenceViolationDetected = MutableStateFlow(false)
@@ -3508,11 +3508,11 @@ class SharedViewModel : ViewModel() {
      * accounting for GPS, telemetry, and command execution delays.
      *
      * Examples at different speeds (with MIN_BUFFER=2m, decel=5.5m/s², latency=0.5s, safety=1.2):
-     * - 0 m/s:  2.0m (minimum buffer only - allows hovering close to fence)
-     * - 2 m/s:  2 + 1.0 + 0.44 = 3.44m
-     * - 3 m/s:  2 + 1.5 + 0.98 = 4.48m
-     * - 5 m/s:  2 + 2.5 + 2.73 = 7.23m
-     * - 8 m/s:  2 + 4.0 + 6.98 = capped at 8m
+     * - 0 m/s:  3.0m (minimum buffer only - allows hovering close to fence)
+     * - 2 m/s:  3 + 1.4 + 0.86 = 5.26m
+     * - 3 m/s:  3 + 2.1 + 1.93 = 7.03m
+     * - 5 m/s:  3 + 3.5 + 5.36 = 11.86m
+     * - 8 m/s:  3 + 5.6 + 13.7 = capped at 15m (high speed multiplier applied)
      */
     private fun calculateDynamicBuffer(currentSpeedMs: Float, altitudeMeters: Float = 0f): Double {
         if (currentSpeedMs <= 0) {
@@ -3520,25 +3520,33 @@ class SharedViewModel : ViewModel() {
         }
 
         // 1. Distance traveled during system latency (GPS + telemetry + command delay)
-        // At 3 m/s with 500ms latency = 1.5m traveled before braking even starts
+        // At 3 m/s with 700ms latency = 2.1m traveled before braking even starts
         val latencyDistance = currentSpeedMs * SYSTEM_LATENCY_SECONDS
 
         // 2. Physics-based stopping distance: v² / (2a)
-        // At 3 m/s with 3.0 m/s² decel = 9/6 = 1.5m
+        // At 3 m/s with 3.5 m/s² decel = 9/7 = 1.29m
         val stoppingDistance = (currentSpeedMs * currentSpeedMs) / (2 * MAX_DECEL_M_S2)
 
         // 3. Apply safety factor to stopping distance only (latency is already worst-case)
         val safeStoppingDistance = stoppingDistance * STOPPING_DISTANCE_SAFETY_FACTOR
 
-        // Total buffer = minimum + latency distance + safe stopping distance
-        val totalBuffer = MIN_BUFFER_METERS + latencyDistance + safeStoppingDistance
+        // 4. HIGH SPEED MULTIPLIER: At speeds above 5 m/s, apply additional safety margin
+        // This accounts for drone momentum and reaction time at high speed
+        val highSpeedMultiplier = if (currentSpeedMs > 5.0f) {
+            1.0 + ((currentSpeedMs - 5.0f) * 0.1)  // +10% per m/s above 5 m/s
+        } else {
+            1.0
+        }
+
+        // Total buffer = (minimum + latency distance + safe stopping distance) × high-speed multiplier
+        val totalBuffer = (MIN_BUFFER_METERS + latencyDistance + safeStoppingDistance) * highSpeedMultiplier
 
         // Cap at maximum buffer
         return minOf(MAX_BUFFER_METERS, totalBuffer)
     }
 
     /**
-     * ULTRA HIGH-FREQUENCY geofence check - runs every 10ms in background.
+     * ULTRA HIGH-FREQUENCY geofence check - runs every 5ms in background.
      * Reads LATEST telemetry values directly, does not wait for state updates.
      *
      * LOGIC based on Mission Planner / ArduPilot:
@@ -3546,7 +3554,8 @@ class SharedViewModel : ViewModel() {
      * - Also checks corner distances (important when perpendicular doesn't hit any segment)
      * - Dynamic buffer based on current speed to ensure drone can stop in time
      * - Returns 0 if outside fence (BREACH), otherwise returns distance to nearest edge
-     * - Triggers BRAKE + RTL if BREACH or within dynamic buffer distance
+     * - Triggers BRAKE + LOITER if BREACH or within dynamic buffer distance at high speed
+     * - LOITER keeps drone stationary and prevents user from flying outside fence
      */
     private fun checkGeofenceNow() {
         // Skip if geofence not enabled
@@ -3627,14 +3636,14 @@ class SharedViewModel : ViewModel() {
                     rtlInitiated = false // Will be set to true once RTL process starts
                     lastBrakeCommandTime = now
 
-                    Log.e("Geofence", "🚨🚨🚨 CONFIRMED BREACH! Outside fence - EMERGENCY BRAKE + RTL! 🚨🚨🚨")
+                    Log.e("Geofence", "🚨🚨🚨 CONFIRMED BREACH! Outside fence - EMERGENCY BRAKE + LOITER! 🚨🚨🚨")
                     Log.e("Geofence", "Position: $droneLat, $droneLon")
 
                     // 🔊 TTS Announcement for critical geofence violation
-                    speak("Critical geofence breach! Emergency RTL activated!")
+                    speak("Critical geofence breach! Emergency LOITER activated!")
 
-                    // Send BRAKE then RTL - this will set rtlInitiated = true
-                    sendEmergencyBrakeAndRTLBurst()
+                    // Send BRAKE then LOITER - this will set rtlInitiated = true
+                    sendEmergencyBrakeAndLoiterBurst()
                 }
 
                 // CONTINUOUS ENFORCEMENT: Only send BRAKE if RTL hasn't been initiated yet
@@ -3656,8 +3665,8 @@ class SharedViewModel : ViewModel() {
             }
         }
 
-        // CASE 2: WARNING - drone is INSIDE fence but close to edge
-        // 🔥 FIX: Only show warning, DO NOT trigger RTL
+        // CASE 2: WARNING ZONE - drone is INSIDE fence but close to edge
+        // 🔥 HIGH SPEED PREEMPTIVE BRAKE: If drone is approaching fence at high speed, stop it immediately
         if (isWithinBuffer) {
             // Set warning state for UI indication (yellow border, etc.)
             if (!_geofenceWarningTriggered.value) {
@@ -3672,10 +3681,24 @@ class SharedViewModel : ViewModel() {
                 )
 
                 // 🔊 TTS Announcement for geofence warning
-                speak("Geofence Breached, brake enabled")
+                speak("Approaching geofence boundary")
             }
-            // DO NOT send BRAKE or RTL - drone is still inside the fence
-            // This is just a warning to the pilot
+
+            // 🔥 HIGH SPEED PREVENTION: If drone is moving fast (>3 m/s) and very close to boundary,
+            // send immediate BRAKE to prevent crossing
+            val criticalDistance = dynamicBuffer * 0.5  // Half of buffer = critical zone
+            if (currentSpeed > 3.0f && distanceToFence < criticalDistance) {
+                Log.w("Geofence", "🛑 HIGH SPEED APPROACHING FENCE! Speed=${String.format("%.1f", currentSpeed)}m/s, dist=${String.format("%.1f", distanceToFence)}m - Sending preemptive BRAKE!")
+
+                // Send brake only if we haven't already taken action
+                if (!geofenceActionTaken) {
+                    val now = System.currentTimeMillis()
+                    if (now - lastBrakeCommandTime > BRAKE_COMMAND_INTERVAL_MS) {
+                        lastBrakeCommandTime = now
+                        sendPreemptiveBrake()
+                    }
+                }
+            }
         }
 
         // Reset state when safely back inside
@@ -3732,12 +3755,66 @@ class SharedViewModel : ViewModel() {
     }
 
     /**
-     * EMERGENCY BURST: Send BRAKE to stop, then immediately try RTL.
-     * OPTIMIZED: Minimal delay between BRAKE and RTL for fast response.
-     * The BRAKE command just needs to be sent - drone starts decelerating immediately.
-     * We don't need to wait for full stop before sending RTL.
+     * Send PREEMPTIVE BRAKE when approaching fence at high speed.
+     * This triggers BEFORE actual breach to slow the drone down and prevent crossing.
+     * After brake, transitions to LOITER to hold position.
      */
-    private fun sendEmergencyBrakeAndRTLBurst() {
+    private fun sendPreemptiveBrake() {
+        viewModelScope.launch {
+            try {
+                Log.i("Geofence", "🛑 PREEMPTIVE BRAKE - High speed approach to fence boundary!")
+                geofenceTriggeringModeChange = true
+
+                // Send BRAKE first
+                val brakeSuccess = repo?.changeMode(MavMode.BRAKE) ?: false
+                Log.i("Geofence", "🛑 Preemptive BRAKE result: $brakeSuccess")
+
+                if (!brakeSuccess) {
+                    // Fallback to LOITER which also stops movement
+                    Log.w("Geofence", "⚠️ Preemptive BRAKE failed, trying LOITER...")
+                    repo?.changeMode(MavMode.LOITER)
+                } else {
+                    // Wait briefly then switch to LOITER to hold position
+                    delay(300)
+                    Log.i("Geofence", "🔒 Switching to LOITER to hold position...")
+                    repo?.changeMode(MavMode.LOITER)
+                }
+
+                // Notify user
+                addNotification(
+                    Notification(
+                        message = "⚠️ Stopped: Approaching geofence at high speed",
+                        type = NotificationType.WARNING
+                    )
+                )
+                ttsManager?.speak("Stopping! Approaching fence!")
+
+            } catch (e: Exception) {
+                Log.e("Geofence", "Preemptive BRAKE error: ${e.message}")
+                // Try LOITER as fallback
+                try {
+                    repo?.changeMode(MavMode.LOITER)
+                } catch (e2: Exception) {
+                    Log.e("Geofence", "LOITER fallback also failed: ${e2.message}")
+                }
+            } finally {
+                // Reset flag after a short delay
+                delay(1000)
+                geofenceTriggeringModeChange = false
+            }
+        }
+    }
+
+    /**
+     * EMERGENCY BURST: Send BRAKE to stop, then immediately try LOITER.
+     * OPTIMIZED: Minimal delay between BRAKE and LOITER for fast response.
+     * The BRAKE command just needs to be sent - drone starts decelerating immediately.
+     * We don't need to wait for full stop before sending LOITER.
+     *
+     * LOITER keeps the drone stationary at its current position, preventing
+     * the user from flying further outside the fence boundary.
+     */
+    private fun sendEmergencyBrakeAndLoiterBurst() {
         viewModelScope.launch {
             repo?.let { repository ->
                 Log.i("Geofence", "═══════════════════════════════════════════════════")
@@ -3754,7 +3831,7 @@ class SharedViewModel : ViewModel() {
                     Log.i("Geofence", "🛑 BRAKE result: $brakeSuccess")
 
                     if (!brakeSuccess) {
-                        // Try LOITER as fallback
+                        // Try LOITER as fallback (also stops movement)
                         Log.w("Geofence", "⚠️ BRAKE failed, trying LOITER...")
                         repository.changeMode(MavMode.LOITER)
                     }
@@ -3762,52 +3839,53 @@ class SharedViewModel : ViewModel() {
                     Log.e("Geofence", "BRAKE error: ${e.message}")
                 }
 
-                // STEP 2: Minimal delay - just enough for command to register (300ms)
+                // STEP 2: Minimal delay - just enough for command to register (200ms)
                 // Drone starts braking immediately, we don't need to wait for full stop
-                Log.i("Geofence", "⏳ Brief pause before RTL (300ms)...")
-                delay(300)
+                Log.i("Geofence", "⏳ Brief pause before LOITER (200ms)...")
+                delay(200)
 
-                // STEP 3: Mark RTL as initiated - this stops continuous BRAKE commands
+                // STEP 3: Mark LOITER as initiated - this stops continuous BRAKE commands
                 rtlInitiated = true
-                Log.i("Geofence", "🏠 RTL process initiated - stopping BRAKE enforcement")
+                Log.i("Geofence", "🔒 LOITER process initiated - stopping BRAKE enforcement")
 
-                // STEP 4: Now send RTL and KEEP TRYING until it works
-                Log.i("Geofence", "🏠 Now sending RTL command...")
-                var rtlSuccess = false
+                // STEP 4: Now send LOITER and KEEP TRYING until it works
+                // LOITER keeps drone stationary, preventing further fence crossing
+                Log.i("Geofence", "🔒 Now sending LOITER command...")
+                var loiterSuccess = false
                 var attempts = 0
                 val maxAttempts = 10
 
-                while (!rtlSuccess && attempts < maxAttempts) {
+                while (!loiterSuccess && attempts < maxAttempts) {
                     attempts++
                     try {
-                        Log.i("Geofence", "🏠 RTL attempt #$attempts...")
-                        rtlSuccess = repository.changeMode(MavMode.RTL)
-                        Log.i("Geofence", "🏠 RTL attempt #$attempts result: $rtlSuccess")
+                        Log.i("Geofence", "🔒 LOITER attempt #$attempts...")
+                        loiterSuccess = repository.changeMode(MavMode.LOITER)
+                        Log.i("Geofence", "🔒 LOITER attempt #$attempts result: $loiterSuccess")
 
-                        if (rtlSuccess) {
-                            Log.i("Geofence", "✓✓✓ RTL MODE ACTIVATED SUCCESSFULLY! ✓✓✓")
+                        if (loiterSuccess) {
+                            Log.i("Geofence", "✓✓✓ LOITER MODE ACTIVATED SUCCESSFULLY! ✓✓✓")
                             break
                         }
                     } catch (e: Exception) {
-                        Log.e("Geofence", "RTL attempt #$attempts error: ${e.message}")
+                        Log.e("Geofence", "LOITER attempt #$attempts error: ${e.message}")
                     }
 
-                    // Short delay before retry (200ms)
-                    if (!rtlSuccess) {
-                        delay(200)
+                    // Short delay before retry (150ms)
+                    if (!loiterSuccess) {
+                        delay(150)
                     }
                 }
 
-                if (rtlSuccess) {
+                if (loiterSuccess) {
                     addNotification(Notification(
-                        message = "🚨 GEOFENCE BREACH - Returning home!",
+                        message = "🚨 GEOFENCE BREACH - Drone stopped! Return to safe area.",
                         type = NotificationType.ERROR
                     ))
-                    ttsManager?.speak("Geofence breach! Returning home!")
+                    ttsManager?.speak("Geofence breach! Drone stopped!")
                 } else {
-                    Log.e("Geofence", "❌ RTL failed after $maxAttempts attempts - drone should remain stopped")
+                    Log.e("Geofence", "❌ LOITER failed after $maxAttempts attempts - drone should remain stopped")
                     addNotification(Notification(
-                        message = "⚠️ GEOFENCE - Drone stopped, RTL failed",
+                        message = "⚠️ GEOFENCE - Drone stopped, LOITER failed",
                         type = NotificationType.WARNING
                     ))
                     ttsManager?.speak("Geofence! Drone stopped!")
