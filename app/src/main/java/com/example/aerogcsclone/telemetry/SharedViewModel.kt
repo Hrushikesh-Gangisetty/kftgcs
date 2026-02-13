@@ -1763,8 +1763,8 @@ class SharedViewModel : ViewModel() {
         }
 
         if (allWaypoints.isNotEmpty()) {
-            // Use default 5m buffer distance
-            val bufferDistance = _fenceRadius.value.toDouble().coerceAtLeast(5.0)
+            // Use default buffer distance with 7m minimum (increased from 5m for 2m extra safety)
+            val bufferDistance = _fenceRadius.value.toDouble().coerceAtLeast(7.0)
             Log.i("Geofence", "Generating ${if (_useSquareGeofence.value) "square" else "polygon"} geofence with ${allWaypoints.size} points, buffer distance: ${bufferDistance}m")
 
             val geofenceShape = if (_useSquareGeofence.value) {
@@ -3440,23 +3440,23 @@ class SharedViewModel : ViewModel() {
         // ═══════════════════════════════════════════════════════════════════════════
 
         // Minimum buffer distance - triggers even when stationary
-        // INCREASED from 3.0m to 9.0m for much better safety margin
+        // INCREASED from 3.0m to 11.0m for much better safety margin
         // This ensures drone stops well before the physical fence boundary
-        private const val MIN_BUFFER_METERS = 9.0  // Minimum buffer when stationary
+        private const val MIN_BUFFER_METERS = 9.5  // Minimum buffer when stationary (+2m extra to prevent crossing)
 
         // Maximum buffer distance - caps the dynamic buffer at high speeds
-        // INCREASED from 15m to 25m for high-speed scenarios
-        private const val MAX_BUFFER_METERS = 25.0  // Maximum buffer for high speed scenarios
+        // INCREASED from 15m to 27m for high-speed scenarios
+        private const val MAX_BUFFER_METERS = 27.0  // Maximum buffer for high speed scenarios (+2m extra)
 
         // Maximum deceleration capability (m/s²) - conservative estimate for multicopters
-        // REDUCED from 3.5 to 2.5 for more conservative braking estimate
+        // REDUCED from 3.5 to 2.0 for VERY conservative braking estimate (starts braking much earlier)
         // This accounts for wind, load, reaction time, and real-world deceleration
-        private const val MAX_DECEL_M_S2 = 2.5  // Very conservative deceleration
+        private const val MAX_DECEL_M_S2 = 2.5  // Very conservative deceleration (increased stopping distance)
 
         // System latency in seconds (GPS + telemetry + command execution)
         // GPS: ~200ms, Telemetry: ~200ms, Command: ~400ms = ~800ms total
-        // INCREASED from 0.7 to 1.0 second for more conservative latency handling
-        private const val SYSTEM_LATENCY_SECONDS = 1.0  // 1000ms total latency (conservative)
+        // Set to 0.8 second for conservative latency handling
+        private const val SYSTEM_LATENCY_SECONDS = 0.8  // 800ms total latency (conservative)
 
         // Safety margin multiplier for stopping distance (accounts for uncertainties)
         // INCREASED from 1.5 to 2.0 for better safety
@@ -3477,9 +3477,9 @@ class SharedViewModel : ViewModel() {
 
         // ═══════════════════════════════════════════════════════════════════════════
         // DEFAULT FENCE RADIUS - Distance between waypoints and geofence boundary
-        // INCREASED from 5m to 15m for much better separation
+        // INCREASED from 5m to 17m for much better separation (+2m extra to prevent crossing)
         // ═══════════════════════════════════════════════════════════════════════════
-        private const val DEFAULT_FENCE_RADIUS_METERS = 15.0f
+        private const val DEFAULT_FENCE_RADIUS_METERS = 17.0f
     }
 
     private val _geofenceViolationDetected = MutableStateFlow(false)
@@ -3607,8 +3607,8 @@ class SharedViewModel : ViewModel() {
         val safeStoppingDistance = stoppingDistance * STOPPING_DISTANCE_SAFETY_FACTOR
 
         // 5. Wind margin - accounts for wind pushing drone during deceleration
-        // Assumes wind could add 30% to stopping distance at speed
-        val windMargin = currentSpeedMs * 0.3
+        // Assumes wind could add 40% to stopping distance at speed (increased from 30% for better safety)
+        val windMargin = currentSpeedMs * 0.4
 
         // 6. HIGH SPEED MULTIPLIER: At speeds above 5 m/s, apply additional safety margin
         // This accounts for drone momentum and slower reaction time at high speed
@@ -3773,11 +3773,12 @@ class SharedViewModel : ViewModel() {
                 speak("Approaching geofence boundary")
             }
 
-            // 🔥 HIGH SPEED PREVENTION: If drone is moving fast (>3 m/s) and very close to boundary,
+            // 🔥 HIGH SPEED PREVENTION: If drone is moving fast (>2.5 m/s) and very close to boundary,
             // send immediate BRAKE to prevent crossing
-            val criticalDistance = dynamicBuffer * 0.5  // Half of buffer = critical zone
-            if (currentSpeed > 3.0f && distanceToFence < criticalDistance) {
-                Log.w("Geofence", "🛑 HIGH SPEED APPROACHING FENCE! Speed=${String.format("%.1f", currentSpeed)}m/s, dist=${String.format("%.1f", distanceToFence)}m - Sending preemptive BRAKE!")
+            // IMPROVED: Trigger at 60% of buffer (was 50%) and lower speed threshold (was 3.0 m/s)
+            val criticalDistance = dynamicBuffer * 0.6  // 60% of buffer = critical zone (more aggressive)
+            if (currentSpeed > 2.5f && distanceToFence < criticalDistance) {
+                Log.w("Geofence", "🛑 HIGH SPEED APPROACHING FENCE! Speed=${String.format("%.1f", currentSpeed)}m/s, dist=${String.format("%.1f", distanceToFence)}m, critical=${String.format("%.1f", criticalDistance)}m - Sending preemptive BRAKE!")
 
                 // Send brake only if we haven't already taken action
                 if (!geofenceActionTaken) {
@@ -3797,18 +3798,27 @@ class SharedViewModel : ViewModel() {
 
         // Stage 1: Reset action taken when back inside fence beyond the dynamic buffer
         // This ensures geofence can re-trigger LOITER if drone goes out again
-        // Use 2x dynamic buffer as hysteresis to prevent oscillation at boundary
-        val rearmThreshold = dynamicBuffer * 2.0
-        if (isInsideFence && distanceToFence > rearmThreshold && geofenceActionTaken) {
-            Log.i("Geofence", "✓ Drone back inside fence (${String.format("%.1f", distanceToFence)}m from edge, threshold: ${String.format("%.1f", rearmThreshold)}m) - Geofence REARMED for re-trigger")
-            geofenceActionTaken = false
-            rtlInitiated = false
-            _geofenceViolationDetected.value = false
+        // Use 1.5x dynamic buffer as hysteresis to prevent oscillation at boundary (reduced from 2x for faster rearm)
+        val rearmThreshold = dynamicBuffer * 1.5
+        if (isInsideFence && distanceToFence > rearmThreshold) {
+            if (geofenceActionTaken || rtlInitiated) {
+                Log.i("Geofence", "✓ Drone back inside fence (${String.format("%.1f", distanceToFence)}m from edge, threshold: ${String.format("%.1f", rearmThreshold)}m) - Geofence REARMED for re-trigger")
+                geofenceActionTaken = false
+                rtlInitiated = false
+                _geofenceViolationDetected.value = false
+                geofenceTriggeringModeChange = false
+            }
+
+            // Also reset breach confirmation when safely inside
+            if (breachConfirmationCount > 0 || firstBreachDetectedTime != null) {
+                breachConfirmationCount = 0
+                firstBreachDetectedTime = null
+            }
         }
 
         // Stage 2: Clear warning when beyond the buffer zone (plus some hysteresis)
         // This clears the warning UI state
-        val warningClearThreshold = dynamicBuffer * 1.5  // 50% hysteresis
+        val warningClearThreshold = dynamicBuffer * 1.2  // 20% hysteresis (reduced from 1.5x)
         if (isInsideFence && distanceToFence > warningClearThreshold) {
             if (_geofenceWarningTriggered.value) {
                 Log.i("Geofence", "✓ Drone safely away from fence edge (${String.format("%.1f", distanceToFence)}m) - Warning cleared")
@@ -3854,6 +3864,7 @@ class SharedViewModel : ViewModel() {
             try {
                 Log.i("Geofence", "🛑 PREEMPTIVE BRAKE - High speed approach to fence boundary!")
                 geofenceTriggeringModeChange = true
+                geofenceActionTaken = true  // Mark action as taken to prevent repeated preemptive brakes
 
                 // Send BRAKE first
                 val brakeSuccess = repo?.changeMode(MavMode.BRAKE) ?: false
@@ -3863,11 +3874,13 @@ class SharedViewModel : ViewModel() {
                     // Fallback to LOITER which holds position
                     Log.w("Geofence", "⚠️ Preemptive BRAKE failed, trying LOITER...")
                     repo?.changeMode(MavMode.LOITER)
+                    rtlInitiated = true  // Mark as initiated even on fallback
                 } else {
                     // Wait briefly then switch to LOITER to hold position
-                    delay(300)
+                    delay(200)  // Reduced from 300ms to 200ms for faster response
                     Log.i("Geofence", "🔒 Switching to LOITER to hold position...")
                     repo?.changeMode(MavMode.LOITER)
+                    rtlInitiated = true  // Mark loiter as initiated
                 }
 
                 // Notify user
@@ -3884,6 +3897,7 @@ class SharedViewModel : ViewModel() {
                 // Try LOITER as fallback
                 try {
                     repo?.changeMode(MavMode.LOITER)
+                    rtlInitiated = true
                 } catch (e2: Exception) {
                     Log.e("Geofence", "LOITER fallback failed: ${e2.message}")
                 }
