@@ -57,7 +57,7 @@ import com.example.aerogcsclone.utils.KmlBoundaryParser
 import com.example.aerogcsclone.utils.KmlPolygon
 import java.util.Locale
 import com.example.aerogcsclone.utils.AppStrings
-import com.example.aerogcsclone.BuildConfig
+import com.example.aerogcsclone.utils.LogUtils
 
 @Suppress("UnusedMaterial3ScaffoldPaddingParameter", "UNUSED_PARAMETER")
 @Composable
@@ -213,9 +213,7 @@ fun PlanScreen(
                         Looper.getMainLooper()
                     )
                 } catch (e: SecurityException) {
-                    if (BuildConfig.DEBUG) {
-                        android.util.Log.e("PlanScreen", "Location permission denied: ${e.message}")
-                    }
+                    LogUtils.e("PlanScreen", "Location permission denied: ${e.message}")
                 }
             } else {
                 Toast.makeText(context, "Location permission required for RC mode", Toast.LENGTH_SHORT).show()
@@ -286,9 +284,7 @@ fun PlanScreen(
                     }
                 } catch (e: Exception) {
                     Toast.makeText(context, "Error reading KML: ${e.message}", Toast.LENGTH_LONG).show()
-                    if (BuildConfig.DEBUG) {
-                        android.util.Log.e("PlanScreen", "KML import error", e)
-                    }
+                    LogUtils.e("PlanScreen", "KML import error", e)
                 }
             }
         }
@@ -307,11 +303,9 @@ fun PlanScreen(
 
     // Debug: Track surveyPolygon changes
     LaunchedEffect(surveyPolygon) {
-        if (BuildConfig.DEBUG) {
-            android.util.Log.d("PlanScreen", "surveyPolygon changed: ${surveyPolygon.size} points, isGridSurveyMode=$isGridSurveyMode")
-            if (surveyPolygon.isNotEmpty()) {
-                android.util.Log.d("PlanScreen", "First point: ${surveyPolygon.first().latitude}, ${surveyPolygon.first().longitude}")
-            }
+        LogUtils.d("PlanScreen", "surveyPolygon changed: ${surveyPolygon.size} points, isGridSurveyMode=$isGridSurveyMode")
+        if (surveyPolygon.isNotEmpty()) {
+            LogUtils.d("PlanScreen", "First point: ${surveyPolygon.first().latitude}, ${surveyPolygon.first().longitude}")
         }
     }
 
@@ -384,17 +378,13 @@ fun PlanScreen(
         endPercent: Float
     ): GridSurveyResult {
         if (sourceGrid.gridLines.isEmpty() || sourceGrid.waypoints.isEmpty()) {
-            if (BuildConfig.DEBUG) {
-                android.util.Log.w("SplitPlan", "Empty source grid - returning as-is")
-            }
+            LogUtils.w("SplitPlan", "Empty source grid - returning as-is")
             return sourceGrid
         }
 
         val totalLines = sourceGrid.numLines
         if (totalLines == 0) {
-            if (BuildConfig.DEBUG) {
-                android.util.Log.w("SplitPlan", "Zero total lines - returning source grid")
-            }
+            LogUtils.w("SplitPlan", "Zero total lines - returning source grid")
             return sourceGrid
         }
 
@@ -404,16 +394,12 @@ fun PlanScreen(
         val startLineIndex = (startPercent * (totalLines - 1)).toInt().coerceIn(0, totalLines - 1)
         val endLineIndex = (endPercent * (totalLines - 1)).toInt().coerceIn(0, totalLines - 1)
 
-        if (BuildConfig.DEBUG) {
-            android.util.Log.d("SplitPlan", "Split calculation: totalLines=$totalLines, startPercent=$startPercent, endPercent=$endPercent")
-            android.util.Log.d("SplitPlan", "Line indices: startLineIndex=$startLineIndex, endLineIndex=$endLineIndex")
-        }
+        LogUtils.d("SplitPlan", "Split calculation: totalLines=$totalLines, startPercent=$startPercent, endPercent=$endPercent")
+        LogUtils.d("SplitPlan", "Line indices: startLineIndex=$startLineIndex, endLineIndex=$endLineIndex")
 
         // Ensure valid range
         if (startLineIndex > endLineIndex) {
-            if (BuildConfig.DEBUG) {
-                android.util.Log.w("SplitPlan", "Invalid range: startLineIndex > endLineIndex")
-            }
+            LogUtils.w("SplitPlan", "Invalid range: startLineIndex > endLineIndex")
             return GridSurveyResult(
                 waypoints = emptyList(),
                 gridLines = emptyList(),
@@ -435,9 +421,7 @@ fun PlanScreen(
             wp.lineIndex in startLineIndex..endLineIndex
         }
 
-        if (BuildConfig.DEBUG) {
-            android.util.Log.d("SplitPlan", "Filtered: ${selectedGridLines.size} lines, ${filteredWaypoints.size} waypoints")
-        }
+        LogUtils.d("SplitPlan", "Filtered: ${selectedGridLines.size} lines, ${filteredWaypoints.size} waypoints")
 
         // CRITICAL: Re-index waypoints so lineIndex starts from 0
         // This ensures proper mission upload with correct line start/end detection
@@ -447,10 +431,8 @@ fun PlanScreen(
         }
 
         // Log first few reindexed waypoints for debugging
-        if (BuildConfig.DEBUG) {
-            reindexedWaypoints.take(6).forEachIndexed { idx, wp ->
-                android.util.Log.d("SplitPlan", "WP[$idx]: lineIndex=${wp.lineIndex}, isStart=${wp.isLineStart}, isEnd=${wp.isLineEnd}")
-            }
+        reindexedWaypoints.take(6).forEachIndexed { idx, wp ->
+            LogUtils.d("SplitPlan", "WP[$idx]: lineIndex=${wp.lineIndex}, isStart=${wp.isLineStart}, isEnd=${wp.isLineEnd}")
         }
 
         // Recalculate total distance for selected waypoints
@@ -465,9 +447,7 @@ fun PlanScreen(
         // Calculate estimated time based on speed
         val estimatedTime = if (surveySpeed > 0) totalDistance / surveySpeed else 0.0
 
-        if (BuildConfig.DEBUG) {
-            android.util.Log.i("SplitPlan", "✓ Generated split: ${reindexedWaypoints.size} waypoints, ${selectedGridLines.size} lines, ${String.format("%.1f", totalDistance)}m")
-        }
+        LogUtils.i("SplitPlan", "✓ Generated split: ${reindexedWaypoints.size} waypoints, ${selectedGridLines.size} lines, ${String.format("%.1f", totalDistance)}m")
 
         return GridSurveyResult(
             waypoints = reindexedWaypoints,
@@ -1243,9 +1223,9 @@ fun PlanScreen(
                                     // ===== OBSTACLE AVOIDANCE PROCESSING =====
                                     // Process waypoints to route around obstacles before upload
                                     val originalWaypoints = gridToUpload.waypoints.map { it.position }
-                                    android.util.Log.d("ObstacleUpload", "Grid upload - Obstacles count: ${obstacles.size}, Original waypoints: ${originalWaypoints.size}")
+                                    LogUtils.d("ObstacleUpload", "Grid upload - Obstacles count: ${obstacles.size}, Original waypoints: ${originalWaypoints.size}")
                                     obstacles.forEachIndexed { idx, pts ->
-                                        android.util.Log.d("ObstacleUpload", "Obstacle $idx has ${pts.size} points")
+                                        LogUtils.d("ObstacleUpload", "Obstacle $idx has ${pts.size} points")
                                     }
 
                                     val processedWaypoints = if (obstacles.isNotEmpty()) {
@@ -1260,7 +1240,7 @@ fun PlanScreen(
                                             originalWaypoints,
                                             obstacleZones
                                         )
-                                        android.util.Log.d("ObstacleUpload", "After processing: ${avoidedPath.size} waypoints (was ${originalWaypoints.size})")
+                                        LogUtils.d("ObstacleUpload", "After processing: ${avoidedPath.size} waypoints (was ${originalWaypoints.size})")
                                         if (avoidedPath.size > originalWaypoints.size) {
                                             Toast.makeText(
                                                 context,
@@ -1268,11 +1248,11 @@ fun PlanScreen(
                                                 Toast.LENGTH_LONG
                                             ).show()
                                         } else {
-                                            android.util.Log.w("ObstacleUpload", "No avoidance waypoints added - path may not cross obstacles")
+                                            LogUtils.w("ObstacleUpload", "No avoidance waypoints added - path may not cross obstacles")
                                         }
                                         avoidedPath
                                     } else {
-                                        android.util.Log.d("ObstacleUpload", "No obstacles defined")
+                                        LogUtils.d("ObstacleUpload", "No obstacles defined")
                                         originalWaypoints
                                     }
 
@@ -1366,7 +1346,7 @@ fun PlanScreen(
                                      val fcuComponentId = telemetryViewModel.getFcuComponentId()
 
                                     // ===== OBSTACLE AVOIDANCE FOR WAYPOINT MODE =====
-                                    android.util.Log.d("ObstacleUpload", "Waypoint upload - Obstacles count: ${obstacles.size}, Original waypoints: ${points.size}")
+                                    LogUtils.d("ObstacleUpload", "Waypoint upload - Obstacles count: ${obstacles.size}, Original waypoints: ${points.size}")
                                     val waypointsToUpload = if (obstacles.isNotEmpty()) {
                                         val obstacleZones = obstacles.mapIndexed { index, obstaclePoints ->
                                             ObstaclePathPlanner.ObstacleZone(
@@ -1379,7 +1359,7 @@ fun PlanScreen(
                                             points.toList(),
                                             obstacleZones
                                         )
-                                        android.util.Log.d("ObstacleUpload", "After processing: ${avoidedPath.size} waypoints (was ${points.size})")
+                                        LogUtils.d("ObstacleUpload", "After processing: ${avoidedPath.size} waypoints (was ${points.size})")
                                         if (avoidedPath.size > points.size) {
                                             Toast.makeText(
                                                 context,
@@ -1387,11 +1367,11 @@ fun PlanScreen(
                                                 Toast.LENGTH_LONG
                                             ).show()
                                         } else {
-                                            android.util.Log.w("ObstacleUpload", "No avoidance waypoints added for waypoint mode")
+                                            LogUtils.w("ObstacleUpload", "No avoidance waypoints added for waypoint mode")
                                         }
                                         avoidedPath
                                     } else {
-                                        android.util.Log.d("ObstacleUpload", "No obstacles defined for waypoint mode")
+                                        LogUtils.d("ObstacleUpload", "No obstacles defined for waypoint mode")
                                         points.toList()
                                     }
 

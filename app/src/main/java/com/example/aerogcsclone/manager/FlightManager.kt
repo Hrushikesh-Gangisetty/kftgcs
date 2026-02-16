@@ -50,13 +50,11 @@ class FlightManager(
         // Capture ground level when drone arms
         if (currentArmedState && !previousArmedState) {
             groundLevelAltitude = relAltM
-            android.util.Log.i("FlightManager", "[Manual Mission] Drone armed - ground level: ${groundLevelAltitude}m")
         }
 
         // Start logging: armed AND altitude > ground + 1m
         val takeoffThreshold = groundLevelAltitude + 1f
         if (currentArmedState && !isFlightActive && relAltM > takeoffThreshold && !hasStartedLogging) {
-            android.util.Log.i("FlightManager", "[Manual Mission] ✅ Starting logging - altitude ${relAltM}m > threshold ${takeoffThreshold}m")
             isFlightActive = true
             hasStartedLogging = true
             startFlight()
@@ -68,13 +66,6 @@ class FlightManager(
         val hasStoppedMoving = currentSpeed < 0.1f
 
         if (isFlightActive && (hasLanded || !currentArmedState || hasStoppedMoving)) {
-            val reason = when {
-                !currentArmedState -> "Disarmed"
-                hasLanded -> "Landed (altitude: ${relAltM}m ≤ ${landingAltitudeThreshold}m)"
-                hasStoppedMoving -> "Stopped (speed: ${currentSpeed}m/s)"
-                else -> "Unknown"
-            }
-            android.util.Log.i("FlightManager", "[Manual Mission] ✅ Stopping logging - Reason: $reason")
             isFlightActive = false
             hasStartedLogging = false
             groundLevelAltitude = 0f
@@ -125,10 +116,8 @@ class FlightManager(
             loggingService = FlightLoggingService(tlogViewModel)
             loggingService?.startLogging(telemetryViewModel.telemetryState)
 
-            android.util.Log.i("FlightManager", "Flight logging started")
-
         } catch (e: Exception) {
-            android.util.Log.e("FlightManager", "Error starting flight", e)
+            // Error starting flight - silently handled
         }
     }
 
@@ -141,10 +130,8 @@ class FlightManager(
             // End the flight with calculated area (you can implement area calculation later)
             tlogViewModel.endFlight()
 
-            android.util.Log.i("FlightManager", "Flight logging stopped")
-
         } catch (e: Exception) {
-            android.util.Log.e("FlightManager", "Error ending flight", e)
+            // Error ending flight - silently handled
         }
     }
 

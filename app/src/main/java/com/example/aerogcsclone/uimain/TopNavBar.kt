@@ -27,9 +27,7 @@ import com.example.aerogcsclone.Telemetry.TelemetryState
 import com.example.aerogcsclone.authentication.AuthViewModel
 import com.example.aerogcsclone.navigation.Screen
 import com.example.aerogcsclone.telemetry.SharedViewModel
-import android.util.Log
 import com.example.aerogcsclone.utils.AppStrings
-import com.example.aerogcsclone.BuildConfig
 
 @Composable
 fun TopNavBar(
@@ -58,18 +56,7 @@ fun TopNavBar(
     // Remember the mode to prevent flickering due to recomposition
     val displayMode by remember(telemetryState.mode) {
         derivedStateOf {
-            val mode = telemetryState.mode ?: "N/A"
-            if (BuildConfig.DEBUG) {
-                Log.d("TopNavBar", "Display mode updated: $mode (from telemetryState.mode: ${telemetryState.mode})")
-            }
-            mode
-        }
-    }
-
-    // Log RC battery percentage updates for verification
-    LaunchedEffect(telemetryState.rcBatteryPercent) {
-        if (BuildConfig.DEBUG) {
-            Log.i("RCBattery", "🎮 TopNavBar: RC Battery display updated to ${telemetryState.rcBatteryPercent ?: "N/A"}%")
+            telemetryState.mode ?: "N/A"
         }
     }
 

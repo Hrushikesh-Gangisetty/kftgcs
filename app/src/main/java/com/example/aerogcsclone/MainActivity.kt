@@ -19,7 +19,6 @@ import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.navigation.compose.rememberNavController
 import com.example.aerogcsclone.navigation.AppNavGraph
 import com.example.aerogcsclone.integration.TlogIntegration
-import android.util.Log
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.viewbinding.BuildConfig
 import com.google.android.gms.maps.MapsInitializer
@@ -69,9 +68,6 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        if (BuildConfig.DEBUG) {
-            android.util.Log.e("MAIN_ACTIVITY", "🔥 MainActivity onCreate CALLED")
-        }
 
         // Handle the splash screen transition.
         installSplashScreen()
@@ -86,17 +82,11 @@ class MainActivity : ComponentActivity() {
         // ✅ WebSocket connection is now managed by mission lifecycle
         // - Opens when mission starts (SharedViewModel.startMission)
         // - Closes when mission ends (TelemetryRepository)
-        if (BuildConfig.DEBUG) {
-            android.util.Log.i("MAIN_ACTIVITY", "📋 WebSocket will connect when mission starts")
-        }
 
         // ✅ Get pilotId and adminId from SessionManager (values from database after login)
         val pilotId = SessionManager.getPilotId(this)
         val adminId = SessionManager.getAdminId(this)
 
-        if (BuildConfig.DEBUG) {
-            android.util.Log.e("MAIN_ACTIVITY", "📋 SessionManager values: pilotId=$pilotId, adminId=$adminId")
-        }
 
         // ✅ Pre-set the values on WebSocketManager (connection happens on mission start)
         wsManager.pilotId = pilotId
@@ -177,7 +167,6 @@ class MainActivity : ComponentActivity() {
                         telemetryState.droneUid?.let { uid ->
                             if (wsManager.droneUid != uid) {
                                 wsManager.droneUid = uid
-                                android.util.Log.i("WebSocketTelemetry", "🔥 DroneUID set: $uid")
                             }
                         }
 
@@ -191,9 +180,8 @@ class MainActivity : ComponentActivity() {
                                     description = "Battery dropped below 20% (${batteryPercent}%)"
                                 )
                                 lowBatteryEventSent = true
-                                android.util.Log.w("WebSocketTelemetry", "⚠️ LOW_BATTERY event sent: ${batteryPercent}%")
                             } catch (e: Exception) {
-                                android.util.Log.e("WebSocketTelemetry", "Failed to send LOW_BATTERY event", e)
+                                // Failed to send LOW_BATTERY event - silently handled
                             }
                         } else if (batteryPercent != null && batteryPercent > 25) {
                             // Reset flag when battery is above 25% (allows re-triggering if battery replaced)
@@ -203,10 +191,7 @@ class MainActivity : ComponentActivity() {
                         // NOTE: Don't call sendTelemetry() here - throttled sender handles it every 1 second
                     }
 
-                    // Log status changes for debugging (only when drone is in flight)
-                    if (GCSApplication.isDroneInFlight) {
-                        android.util.Log.d("MainActivity", "Drone in flight - crash protection active (Alt: ${altitude}m)")
-                    }
+                    // Drone in flight status tracked for crash protection
                 }
             }
 

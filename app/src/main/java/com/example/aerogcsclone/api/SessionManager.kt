@@ -2,7 +2,6 @@ package com.example.aerogcsclone.api
 
 import android.content.Context
 import android.content.SharedPreferences
-import android.util.Log
 import androidx.core.content.edit
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
@@ -23,7 +22,6 @@ import androidx.security.crypto.MasterKey
  * - First/Last name (encrypted)
  */
 object SessionManager {
-    private const val TAG = "SessionManager"
     private const val PREF_NAME = "secure_pilot_session"
     private const val KEY_EMAIL = "email"
     private const val KEY_PILOT_ID = "pilot_id"
@@ -53,10 +51,8 @@ object SessionManager {
                 EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
             )
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Failed to create EncryptedSharedPreferences: ${e.message}", e)
             // Fallback to regular SharedPreferences only if encryption fails
             // This should rarely happen but prevents app crashes
-            Log.w(TAG, "⚠️ Falling back to regular SharedPreferences")
             context.getSharedPreferences(PREF_NAME + "_fallback", Context.MODE_PRIVATE)
         }
     }
@@ -76,7 +72,6 @@ object SessionManager {
                 return
             }
 
-            Log.d(TAG, "📦 Migrating session data to encrypted storage...")
 
             val email = legacyPrefs.getString(KEY_EMAIL, null)
             val pilotId = legacyPrefs.getInt(KEY_PILOT_ID, -1)
@@ -99,13 +94,10 @@ object SessionManager {
             // Clear legacy plaintext storage
             legacyPrefs.edit { clear() }
 
-            Log.d(TAG, "✅ Session data migration completed successfully")
-
             // Also fix adminId if needed
             fixAdminIdIfNeeded(context)
 
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Session migration failed: ${e.message}", e)
         }
     }
 
@@ -119,14 +111,11 @@ object SessionManager {
             val prefs = getPreferences(context)
             val currentAdminId = prefs.getInt(KEY_ADMIN_ID, 1)
             if (currentAdminId == 2) {
-                Log.w(TAG, "⚠️ Fixing adminId from 2 to 1 (Admin id=1 exists in DB)")
                 prefs.edit {
                     putInt(KEY_ADMIN_ID, 1)
                 }
-                Log.d(TAG, "✅ adminId fixed to 1")
             }
         } catch (e: Exception) {
-            Log.e(TAG, "❌ Failed to fix adminId: ${e.message}", e)
         }
     }
 

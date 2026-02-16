@@ -29,8 +29,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FlightTakeoff
 import androidx.compose.ui.unit.Dp
 import com.example.aerogcsclone.utils.AppStrings
-import android.util.Log
-import com.example.aerogcsclone.BuildConfig
 
 @Composable
 fun SelectFlyingMethodScreen(navController: NavController, sharedViewModel: SharedViewModel) {
@@ -44,14 +42,7 @@ fun SelectFlyingMethodScreen(navController: NavController, sharedViewModel: Shar
         val missionPaused = telemetryState.missionPaused
         val hasResumePoint = resumePointLocation != null
 
-        if (missionPaused || hasResumePoint) {
-            if (BuildConfig.DEBUG) {
-                Log.i("SelectFlyingMethod", "Mission is paused or has resume point - NOT clearing mission data (missionPaused=$missionPaused, hasResumePoint=$hasResumePoint)")
-            }
-        } else {
-            if (BuildConfig.DEBUG) {
-                Log.i("SelectFlyingMethod", "Clearing mission data from map")
-            }
+        if (!missionPaused && !hasResumePoint) {
             sharedViewModel.clearMissionFromMap()
         }
     }

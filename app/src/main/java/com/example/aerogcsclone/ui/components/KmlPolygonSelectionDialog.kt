@@ -170,10 +170,8 @@ fun KmlPolygonSelectionDialog(
 
                     Button(
                         onClick = {
-                            android.util.Log.d("KmlDialog", "Use Selected clicked, index=$selectedIndex")
                             selectedIndex?.let { index ->
                                 val polygon = polygons[index]
-                                android.util.Log.d("KmlDialog", "Selected: ${polygon.name}")
                                 onSelectPolygon(polygon)
                             }
                         },
