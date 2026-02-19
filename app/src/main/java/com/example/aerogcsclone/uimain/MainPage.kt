@@ -32,6 +32,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.text.style.TextOverflow
 import com.example.aerogcsclone.utils.AppStrings
 import com.example.aerogcsclone.ui.components.MissionCompletionDialog
+import com.example.aerogcsclone.ui.components.DroneCameraFeedOverlay
 import kotlinx.coroutines.flow.debounce
 
 @Composable
@@ -126,6 +127,8 @@ fun MainPage(
     val currentPlotName by telemetryViewModel.currentPlotName.collectAsState()
     val currentCropType by telemetryViewModel.currentCropType.collectAsState()
 
+    // Drone Camera Feed state
+    var showCameraFeed by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -207,6 +210,9 @@ fun MainPage(
                         Toast.makeText(context, "No GPS location available", Toast.LENGTH_SHORT).show()
                     }
                 },
+                onCameraClick = {
+                    showCameraFeed = !showCameraFeed
+                },
                 currentMode = telemetryState.mode
             )
 
@@ -226,6 +232,15 @@ fun MainPage(
                     SprayStatusPopup(message = message)
                 }
             }
+
+            // Drone Camera Feed Overlay (Picture-in-Picture at bottom-end, expandable)
+            DroneCameraFeedOverlay(
+                isVisible = showCameraFeed,
+                onDismiss = { showCameraFeed = false },
+                modifier = Modifier.matchParentSize(),
+                videoStreamUrl = null, // Set to drone camera stream URL when available (e.g., RTSP/HTTP)
+                isConnected = telemetryState.connected
+            )
 
             // TopNavBar removed - it's already handled in AppNavGraph.kt
         }
@@ -632,6 +647,7 @@ fun FloatingButtons(
     onToggleMapType: () -> Unit,
     onStartMission: () -> Unit,
     onRefresh: () -> Unit,
+    onCameraClick: () -> Unit = {},
     currentMode: String?
 ) {
     Column(
@@ -711,6 +727,32 @@ fun FloatingButtons(
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = AppStrings.mapType,
+                    color = Color.White,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
+
+        // Camera Feed Button
+        FloatingActionButton(
+            onClick = { onCameraClick() },
+            containerColor = Color.Black.copy(alpha = 0.7f),
+            modifier = Modifier.size(width = 70.dp, height = 56.dp)
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Icon(
+                    Icons.Default.Videocam,
+                    contentDescription = AppStrings.camera,
+                    tint = Color.White,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = AppStrings.camera,
                     color = Color.White,
                     fontSize = 9.sp,
                     fontWeight = FontWeight.Medium

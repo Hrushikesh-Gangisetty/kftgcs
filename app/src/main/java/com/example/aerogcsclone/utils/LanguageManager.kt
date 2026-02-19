@@ -179,6 +179,7 @@ object AppStrings {
     val split get() = getString("Split", "విభజించు")
     val recenter get() = getString("Recenter", "మధ్యలో ఉంచు")
     val mapType get() = getString("Map Type", "మ్యాప్ రకం")
+    val camera get() = getString("Camera", "కెమెరా")
 
     // NEW: Status Panel Labels
     val alt get() = getString("Alt", "ఎత్తు")

@@ -28,6 +28,10 @@
     <!-- Permission for Text-to-Speech -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
+    <!-- Foreground service permission for Video Relay -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
     <!-- Declare that the app uses Bluetooth -->
     <uses-feature android:name="android.hardware.bluetooth" android:required="true"/>
 
@@ -72,6 +76,16 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_provider_paths" />
         </provider>
+
+        <!-- Video Relay Foreground Service (new isolated component) -->
+        <service
+            android:name=".videorelay.VideoRelayService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="UDP video stream relay forwarding" />
+        </service>
     </application>
 
 </manifest>
