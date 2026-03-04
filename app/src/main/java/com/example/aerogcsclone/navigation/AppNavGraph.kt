@@ -20,6 +20,7 @@ import com.example.aerogcsclone.authentication.LoginPage
 import com.example.aerogcsclone.authentication.SignupPage
 import com.example.aerogcsclone.authentication.WelcomeScreen
 import com.example.aerogcsclone.authentication.OtpVerificationPage
+import com.example.aerogcsclone.authentication.TermsAndConditionsScreen
 import com.example.aerogcsclone.calibration.CalibrationScreen
 import com.example.aerogcsclone.calibration.CalibrationViewModel
 import com.example.aerogcsclone.calibration.CompassCalibrationScreen
@@ -79,6 +80,7 @@ sealed class Screen(val route: String) {
     object PumpCalibration : Screen("pump_calibration")
     object SpraySystemTest : Screen("spray_system_test")
     object Security : Screen("security")
+    object TermsAndConditions : Screen("terms_and_conditions")
 }
 
 @Composable
@@ -128,6 +130,10 @@ fun AppNavGraph(navController: NavHostController) {
                 navController = navController,
                 authViewModel = authViewModel
             )
+        }
+
+        composable(Screen.TermsAndConditions.route) {
+            TermsAndConditionsScreen(navController = navController)
         }
 
         composable("otp_verification/{email}") { backStackEntry ->
