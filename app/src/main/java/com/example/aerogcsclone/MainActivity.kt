@@ -21,7 +21,6 @@ import com.example.aerogcsclone.navigation.AppNavGraph
 import com.example.aerogcsclone.integration.TlogIntegration
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.viewbinding.BuildConfig
-import com.google.android.gms.maps.MapsInitializer
 import com.google.accompanist.systemuicontroller.rememberSystemUiController
 import com.example.aerogcsclone.telemetry.SharedViewModel
 import com.example.aerogcsclone.telemetry.WebSocketManager
@@ -74,10 +73,8 @@ class MainActivity : ComponentActivity() {
 
         super.onCreate(savedInstanceState)
 
-        // Initialize Maps SDK with new API
-        MapsInitializer.initialize(applicationContext, MapsInitializer.Renderer.LATEST) {
-            // You can log or handle the chosen renderer here
-        }
+        // MapsInitializer is now called early in GCSApplication.onCreate()
+        // to avoid race conditions with map tile loading
 
         // ✅ WebSocket connection is now managed by mission lifecycle
         // - Opens when mission starts (SharedViewModel.startMission)

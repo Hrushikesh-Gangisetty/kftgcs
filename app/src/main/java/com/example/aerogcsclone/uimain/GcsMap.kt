@@ -17,6 +17,8 @@ import com.google.android.gms.maps.model.BitmapDescriptor
 import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.maps.android.compose.*
 import com.google.maps.android.SphericalUtil
+import kotlinx.coroutines.delay
+import timber.log.Timber
 import java.util.Locale
 import kotlin.math.sqrt
 
@@ -362,6 +364,33 @@ fun GcsMap(
     val context = LocalContext.current
     val cameraState = cameraPositionState ?: rememberCameraPositionState()
 
+    // --- Deferred map loading to avoid "referer is null" race condition ---
+    // The Maps SDK sometimes starts rendering before its internal HTTP client
+    // is ready, causing tile loading failures. We defer rendering slightly
+    // and use a key to force remount if the map fails to load tiles.
+    var isMapReady by remember { mutableStateOf(false) }
+    var mapLoadAttempt by remember { mutableIntStateOf(0) }
+    var mapRendered by remember { mutableStateOf(false) }
+
+    // Small delay before showing the map to let the Maps SDK fully initialize
+    LaunchedEffect(mapLoadAttempt) {
+        isMapReady = false
+        delay(150L) // Brief delay to let SDK HTTP client stabilize
+        isMapReady = true
+    }
+
+    // If the map hasn't reported loaded after a timeout, force a remount (max 2 retries)
+    LaunchedEffect(mapLoadAttempt, isMapReady) {
+        if (isMapReady && !mapRendered && mapLoadAttempt < 2) {
+            delay(8000L) // Wait 8 seconds for map tiles to load
+            if (!mapRendered) {
+                Timber.w("Map tiles did not load after attempt ${mapLoadAttempt + 1}, retrying...")
+                mapLoadAttempt++
+                mapRendered = false
+            }
+        }
+    }
+
     // Data class to track position with spray status
     data class DronePathPoint(
         val position: LatLng,
@@ -426,13 +455,20 @@ fun GcsMap(
         }
     }
 
-    GoogleMap(
-        modifier = Modifier.fillMaxSize(),
-        cameraPositionState = cameraState,
-        properties = MapProperties(mapType = mapType),
-        uiSettings = MapUiSettings(zoomControlsEnabled = false), // Disable zoom controls
-        onMapClick = { latLng -> onMapClick(latLng) }
-    ) {
+    // Use key() to force remount when mapLoadAttempt changes (retry mechanism)
+    key(mapLoadAttempt) {
+        if (isMapReady) {
+            GoogleMap(
+                modifier = Modifier.fillMaxSize(),
+                cameraPositionState = cameraState,
+                properties = MapProperties(mapType = mapType),
+                uiSettings = MapUiSettings(zoomControlsEnabled = false), // Disable zoom controls
+                onMapClick = { latLng -> onMapClick(latLng) },
+                onMapLoaded = {
+                    mapRendered = true
+                    Timber.d("Map tiles loaded successfully (attempt ${mapLoadAttempt + 1})")
+                }
+            ) {
         // Polygon geofence boundary overlay (replaces circular fence)
         if (geofenceEnabled && geofencePolygon.isNotEmpty()) {
             // Draw the polygon boundary
@@ -1183,6 +1219,8 @@ fun GcsMap(
             }
         }
     }
+        } // end if (isMapReady)
+    } // end key(mapLoadAttempt)
 }
 
 /**

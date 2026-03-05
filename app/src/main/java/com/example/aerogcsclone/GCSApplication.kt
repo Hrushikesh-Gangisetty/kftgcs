@@ -3,6 +3,7 @@ package com.example.aerogcsclone
 import android.app.Application
 import com.example.aerogcsclone.api.SessionManager
 import com.example.aerogcsclone.security.SecurePinManager
+import com.google.android.gms.maps.MapsInitializer
 import timber.log.Timber
 
 /**
@@ -54,6 +55,17 @@ class GCSApplication : Application() {
         // Initialize Timber for logging - ONLY in debug builds
         // In release builds, no logs will be output (security feature)
         initializeTimber()
+
+        // Initialize Maps SDK as early as possible to avoid race conditions
+        // where the map renders before its internal HTTP client is ready
+        // (fixes intermittent "referer is null" tile loading failures)
+        try {
+            MapsInitializer.initialize(this, MapsInitializer.Renderer.LATEST) { renderer ->
+                Timber.d("Maps SDK initialized with renderer: $renderer")
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to pre-initialize Maps SDK")
+        }
 
         // Migrate any plaintext data to secure encrypted storage (one-time operation)
         migrateToSecureStorage()
