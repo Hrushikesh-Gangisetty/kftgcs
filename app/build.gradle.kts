@@ -16,7 +16,7 @@ if (localPropertiesFile.exists()) {
 }
 
 android {
-    namespace = "com.example.aerogcsclone"
+    namespace = "com.example.kftgcs"
     compileSdk = 36
 
     defaultConfig {
