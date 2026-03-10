@@ -55,6 +55,12 @@ fun LoginPage(modifier: Modifier = Modifier, navController: NavController, authV
                     popUpTo(Screen.Login.route) { inclusive = true }
                 }
             }
+            is AuthState.TestAuthenticated -> {
+                Timber.d("LoginPage: Test user authenticated, navigating directly to Connection")
+                navController.navigate(Screen.Connection.route) {
+                    popUpTo(Screen.Login.route) { inclusive = true }
+                }
+            }
             is AuthState.Error -> {
                 Timber.e("LoginPage: Auth error: ${state.message}")
                 Toast.makeText(context, state.message, Toast.LENGTH_SHORT).show()
