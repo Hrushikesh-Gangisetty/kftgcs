@@ -4,7 +4,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
-    alias(libs.plugins.google.gms.google.services)
+//    alias(libs.plugins.google.gms.google.services)
     id("kotlin-kapt")
 }
 
@@ -20,7 +20,7 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.example.aerogcsclone"
+        applicationId = "com.kft.gcs"
         minSdk = 26
         targetSdk = 35
         versionCode = 1
@@ -76,6 +76,9 @@ android {
         compose = true
         buildConfig = true  // Enable BuildConfig generation
     }
+    lint {
+        baseline = file("lint-baseline.xml")
+    }
 }
 dependencies {
     // Core + lifecycle
@@ -83,6 +86,9 @@ dependencies {
     implementation("androidx.core:core-splashscreen:1.0.1")
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
+
+    // Fragment (required for ActivityResult APIs - version must be >= 1.3.0)
+    implementation("androidx.fragment:fragment-ktx:1.6.2")
 
     // Compose BOM (manages versions automatically)
     implementation(platform(libs.androidx.compose.bom))
@@ -121,7 +127,7 @@ dependencies {
 }
 dependencies {
     implementation(libs.androidx.runtime.livedata)
-    implementation(libs.firebase.auth)
+//    implementation(libs.firebase.auth)
 
     // MAVLink message definitions (standard dialects like common.xml)
     implementation("com.divpundir.mavlink:definitions:1.2.8")
@@ -155,10 +161,10 @@ dependencies {
     // Accompanist System UI Controller for status bar control
     implementation("com.google.accompanist:accompanist-systemuicontroller:0.34.0")
 
-    implementation(platform("com.google.firebase:firebase-bom:33.13.0"))
-    implementation ("androidx.navigation:navigation-compose:2.7.6")
-    implementation ("androidx.lifecycle:lifecycle-runtime-ktx:2.6.2")
-    implementation ("com.google.firebase:firebase-auth-ktx:22.3.1")
+//    implementation(platform("com.google.firebase:firebase-bom:33.13.0"))
+//    implementation ("androidx.navigation:navigation-compose:2.7.6")
+//    implementation ("androidx.lifecycle:lifecycle-runtime-ktx:2.6.2")
+//    implementation ("com.google.firebase:firebase-auth-ktx:22.3.1")
     implementation ("com.google.android.gms:play-services-auth:20.7.0")
 
     // Google Play Services Location for phone GPS in RC mode

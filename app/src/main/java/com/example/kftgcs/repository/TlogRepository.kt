@@ -3,14 +3,11 @@ package com.example.kftgcs.repository
 import com.example.kftgcs.database.MissionTemplateDatabase
 import com.example.kftgcs.database.tlog.*
 import kotlinx.coroutines.flow.Flow
-import javax.inject.Inject
-import javax.inject.Singleton
 
 /**
  * Repository for managing flight logs and telemetry data
  */
-@Singleton
-class TlogRepository @Inject constructor(
+class TlogRepository(
     private val database: MissionTemplateDatabase
 ) {
     private val flightDao = database.flightDao()
@@ -68,7 +65,6 @@ class TlogRepository @Inject constructor(
         rollAngle: Float? = null,
         yawAngle: Float? = null,
         droneUid: String? = null,
-
     ) {
         try {
             val telemetry = TelemetryEntity(
@@ -88,7 +84,6 @@ class TlogRepository @Inject constructor(
                 rollAngle = rollAngle,
                 yawAngle = yawAngle,
                 droneUid = droneUid,
-
             )
             telemetryDao.insertTelemetry(telemetry)
         } catch (e: Exception) {

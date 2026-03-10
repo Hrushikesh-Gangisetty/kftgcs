@@ -6,42 +6,27 @@ import com.example.kftgcs.database.GridParameters
 import com.divpundir.mavlink.definitions.common.MissionItemInt
 import com.google.android.gms.maps.model.LatLng
 import kotlinx.coroutines.flow.Flow
-import javax.inject.Inject
-import javax.inject.Singleton
 
 /**
  * Repository for Mission Template data operations
  * Provides a clean API for the ViewModel to access mission template data
  */
-@Singleton
-class MissionTemplateRepository @Inject constructor(
+class MissionTemplateRepository(
     private val missionTemplateDao: MissionTemplateDao
 ) {
 
-    /**
-     * Get all mission templates as a Flow for reactive UI updates
-     */
     fun getAllTemplates(): Flow<List<MissionTemplateEntity>> {
         return missionTemplateDao.getAllTemplates()
     }
 
-    /**
-     * Get a specific template by ID
-     */
     suspend fun getTemplateById(id: Long): MissionTemplateEntity? {
         return missionTemplateDao.getTemplateById(id)
     }
 
-    /**
-     * Check if a template with the same project and plot name already exists
-     */
     suspend fun getTemplateByNames(projectName: String, plotName: String): MissionTemplateEntity? {
         return missionTemplateDao.getTemplateByNames(projectName, plotName)
     }
 
-    /**
-     * Save a new mission template
-     */
     suspend fun saveTemplate(
         projectName: String,
         plotName: String,
@@ -61,7 +46,6 @@ class MissionTemplateRepository @Inject constructor(
                 createdAt = System.currentTimeMillis(),
                 updatedAt = System.currentTimeMillis()
             )
-
             val id = missionTemplateDao.insertTemplate(template)
             Result.success(id)
         } catch (e: Exception) {
@@ -69,9 +53,6 @@ class MissionTemplateRepository @Inject constructor(
         }
     }
 
-    /**
-     * Update an existing template
-     */
     suspend fun updateTemplate(template: MissionTemplateEntity): Result<Unit> {
         return try {
             val updatedTemplate = template.copy(updatedAt = System.currentTimeMillis())
@@ -82,9 +63,6 @@ class MissionTemplateRepository @Inject constructor(
         }
     }
 
-    /**
-     * Delete a template
-     */
     suspend fun deleteTemplate(template: MissionTemplateEntity): Result<Unit> {
         return try {
             missionTemplateDao.deleteTemplate(template)
@@ -94,9 +72,6 @@ class MissionTemplateRepository @Inject constructor(
         }
     }
 
-    /**
-     * Delete a template by ID
-     */
     suspend fun deleteTemplateById(id: Long): Result<Unit> {
         return try {
             missionTemplateDao.deleteTemplateById(id)
@@ -106,9 +81,6 @@ class MissionTemplateRepository @Inject constructor(
         }
     }
 
-    /**
-     * Get the total count of templates
-     */
     suspend fun getTemplateCount(): Int {
         return missionTemplateDao.getTemplateCount()
     }

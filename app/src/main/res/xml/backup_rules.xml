@@ -28,7 +28,7 @@
     <exclude domain="sharedpref" path="secure_pilot_session_fallback.xml"/>
 
     <!-- Firebase/Google auth tokens -->
-    <exclude domain="sharedpref" path="com.google.firebase.auth.api.Store.xml"/>
+<!--    <exclude domain="sharedpref" path="com.google.firebase.auth.api.Store.xml"/>-->
     <exclude domain="sharedpref" path="com.google.android.gms.signin.xml"/>
 
     <!-- All databases (flight logs, telemetry, mission data) -->
