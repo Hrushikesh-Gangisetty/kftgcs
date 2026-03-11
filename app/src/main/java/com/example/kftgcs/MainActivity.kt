@@ -237,6 +237,13 @@ class MainActivity : ComponentActivity() {
             permissionsToRequest.add(Manifest.permission.BLUETOOTH_CONNECT)
         }
 
+        // POST_NOTIFICATIONS is required on Android 13+ (API 33) for foreground service
+        // notifications to be visible. Without this, the persistent notification for
+        // VideoRelayService may be silently blocked by the OS.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            permissionsToRequest.add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+
         requestPermissionsLauncher.launch(permissionsToRequest.toTypedArray())
     }
 }

@@ -32,6 +32,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
+    <!-- Notification permission (required on Android 13+ / API 33+) for foreground service notification -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <!-- Declare that the app uses Bluetooth -->
     <uses-feature android:name="android.hardware.bluetooth" android:required="true"/>
 
