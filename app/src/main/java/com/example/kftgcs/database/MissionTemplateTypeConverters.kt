@@ -39,11 +39,21 @@ class MissionTemplateTypeConverters {
             jsonObject.addProperty("y", src.y)
             jsonObject.addProperty("z", src.z)
 
+            // Serialize mission type (prevents data loss on round-trip)
+            jsonObject.addProperty("missionType", src.missionType.value.toInt())
+
             return jsonObject
         }
 
         override fun deserialize(json: JsonElement, typeOfT: Type, context: JsonDeserializationContext): MissionItemInt {
             val jsonObject = json.asJsonObject
+
+            // Read missionType if present (backward compatible with older saved data)
+            val missionType = if (jsonObject.has("missionType")) {
+                com.divpundir.mavlink.api.MavEnumValue.fromValue(jsonObject.get("missionType").asInt.toUInt())
+            } else {
+                com.divpundir.mavlink.api.MavEnumValue.fromValue(0u) // Default: MAV_MISSION_TYPE_MISSION
+            }
 
             return MissionItemInt(
                 targetSystem = jsonObject.get("targetSystem").asInt.toUByte(),
@@ -59,7 +69,8 @@ class MissionTemplateTypeConverters {
                 param4 = jsonObject.get("param4").asFloat,
                 x = jsonObject.get("x").asInt,
                 y = jsonObject.get("y").asInt,
-                z = jsonObject.get("z").asFloat
+                z = jsonObject.get("z").asFloat,
+                missionType = missionType
             )
         }
     }

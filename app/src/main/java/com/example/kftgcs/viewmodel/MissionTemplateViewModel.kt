@@ -45,56 +45,63 @@ class MissionTemplateViewModel(application: Application) : AndroidViewModel(appl
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
 
-            // Validate input
-            if (projectName.isBlank() || plotName.isBlank()) {
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    errorMessage = "Project name and plot name cannot be empty"
-                )
-                return@launch
-            }
-
-            if (waypoints.isEmpty() && !isGridSurvey) {
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    errorMessage = "Cannot save template with no waypoints"
-                )
-                return@launch
-            }
-
-            // Check if template with same names already exists
-            val existingTemplate = repository.getTemplateByNames(projectName.trim(), plotName.trim())
-            if (existingTemplate != null) {
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    errorMessage = "A template with this project and plot name already exists"
-                )
-                return@launch
-            }
-
-            // Save template
-            repository.saveTemplate(
-                projectName = projectName,
-                plotName = plotName,
-                waypoints = waypoints,
-                waypointPositions = waypointPositions,
-                isGridSurvey = isGridSurvey,
-                gridParameters = gridParameters
-            ).fold(
-                onSuccess = { templateId ->
+            try {
+                // Validate input
+                if (projectName.isBlank() || plotName.isBlank()) {
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
-                        successMessage = "Template saved successfully",
-                        lastSavedTemplateId = templateId
+                        errorMessage = "Project name and plot name cannot be empty"
                     )
-                },
-                onFailure = { error ->
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        errorMessage = "Failed to save template: ${error.message}"
-                    )
+                    return@launch
                 }
-            )
+
+                if (waypoints.isEmpty() && !isGridSurvey) {
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        errorMessage = "Cannot save template with no waypoints"
+                    )
+                    return@launch
+                }
+
+                // Check if template with same names already exists
+                val existingTemplate = repository.getTemplateByNames(projectName.trim(), plotName.trim())
+                if (existingTemplate != null) {
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        errorMessage = "A template with this project and plot name already exists"
+                    )
+                    return@launch
+                }
+
+                // Save template
+                repository.saveTemplate(
+                    projectName = projectName,
+                    plotName = plotName,
+                    waypoints = waypoints,
+                    waypointPositions = waypointPositions,
+                    isGridSurvey = isGridSurvey,
+                    gridParameters = gridParameters
+                ).fold(
+                    onSuccess = { templateId ->
+                        _uiState.value = _uiState.value.copy(
+                            isLoading = false,
+                            successMessage = "Template saved successfully",
+                            lastSavedTemplateId = templateId
+                        )
+                    },
+                    onFailure = { error ->
+                        _uiState.value = _uiState.value.copy(
+                            isLoading = false,
+                            errorMessage = "Failed to save template: ${error.message}"
+                        )
+                    }
+                )
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    errorMessage = "Failed to save template: ${e.message ?: "Unknown error"}"
+                )
+            }
         }
     }
 
