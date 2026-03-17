@@ -42,6 +42,8 @@
 -keep class com.google.gson.** { *; }
 -keepattributes Signature
 -keepattributes *Annotation*
+-keepattributes EnclosingMethod
+-keepattributes InnerClasses
 
 # Keep all classes that use @SerializedName annotation
 -keepclassmembers,allowobfuscation class * {
@@ -60,6 +62,49 @@
 # Timber: Keep Timber logging framework
 # ============================================
 -dontwarn timber.log.**
+
+# ============================================
+# Room Database: Keep all entities, DAOs, and TypeConverters
+# R8 obfuscation renames field names, which breaks Gson
+# serialization/deserialization used by Room TypeConverters.
+# This caused crashes on physical devices (release builds)
+# when saving mission templates.
+# ============================================
+-keep class com.example.kftgcs.database.** { *; }
+-keep class com.example.kftgcs.database.obstacle.** { *; }
+-keep class com.example.kftgcs.database.tlog.** { *; }
+
+# ============================================
+# MAVLink: Keep MAVLink library classes
+# MissionItemInt and MavEnumValue are serialized via Gson
+# reflection in MissionTemplateTypeConverters.
+# ============================================
+-keep class com.divpundir.mavlink.** { *; }
+-keep class io.dronefleet.mavlink.** { *; }
+
+# ============================================
+# App data model classes used with Gson serialization
+# ============================================
+-keep class com.example.kftgcs.obstacle.** { *; }
+-keep class com.example.kftgcs.repository.** { *; }
+-keep class com.example.kftgcs.viewmodel.MissionTemplateUiState { *; }
+
+# ============================================
+# Kotlin: Keep reflection and metadata
+# Required for Gson deserialization of Kotlin data classes
+# and MAVLink's reflection-based message handling
+# ============================================
+-keep class kotlin.reflect.** { *; }
+-keep class kotlin.Metadata { *; }
+-keepclassmembers class * {
+    @kotlin.Metadata *;
+}
+
+# ============================================
+# Google Maps: Keep LatLng and model classes
+# Used in Gson serialization of waypoint positions
+# ============================================
+-keep class com.google.android.gms.maps.model.** { *; }
 
 # ============================================
 # PRODUCTION BUILD: Remove all Android Log statements
