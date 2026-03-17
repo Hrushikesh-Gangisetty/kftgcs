@@ -9,6 +9,7 @@ import com.example.kftgcs.database.GridParameters
 import com.example.kftgcs.repository.MissionTemplateRepository
 import com.divpundir.mavlink.definitions.common.MissionItemInt
 import com.google.android.gms.maps.model.LatLng
+import com.example.kftgcs.utils.LogUtils
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
@@ -97,6 +98,7 @@ class MissionTemplateViewModel(application: Application) : AndroidViewModel(appl
                     }
                 )
             } catch (e: Exception) {
+                LogUtils.e("MissionTemplateVM", "Failed to save template", e)
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     errorMessage = "Failed to save template: ${e.message ?: "Unknown error"}"

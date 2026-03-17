@@ -5,6 +5,7 @@ import com.divpundir.mavlink.definitions.common.MissionItemInt
 import com.google.android.gms.maps.model.LatLng
 import com.google.gson.*
 import com.google.gson.reflect.TypeToken
+import android.util.Log
 import java.lang.reflect.Type
 
 /**
@@ -52,6 +53,7 @@ class MissionTemplateTypeConverters {
             val missionType = if (jsonObject.has("missionType")) {
                 com.divpundir.mavlink.api.MavEnumValue.fromValue(jsonObject.get("missionType").asInt.toUInt())
             } else {
+                Log.w("MissionTypeConverter", "missionType field missing in saved data, using default MISSION type")
                 com.divpundir.mavlink.api.MavEnumValue.fromValue(0u) // Default: MAV_MISSION_TYPE_MISSION
             }
 
