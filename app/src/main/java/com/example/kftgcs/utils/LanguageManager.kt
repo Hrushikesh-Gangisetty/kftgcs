@@ -221,6 +221,8 @@ object AppStrings {
     val loginCredentials get() = getString("Login with mail credentials", "పవమాన్ ఆధారాలతో లాగిన్ చేయండి")
     val firstName get() = getString("First Name", "మొదటి పేరు")
     val lastName get() = getString("Last Name", "చివరి పేరు")
+    val companyName get() = getString("Company Name", "కంపెనీ పేరు")
+    val selectCompany get() = getString("Select Company", "కంపెనీని ఎంచుకోండి")
     val email get() = getString("Email", "ఇమెయిల్")
     val mobileNumber get() = getString("Mobile Number", "మొబైల్ నంబర్")
     val password get() = getString("Password", "పాస్‌వర్డ్")

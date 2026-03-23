@@ -387,6 +387,54 @@ object ApiService {
         }
     }
 
+    suspend fun fetchAllAdmins(): ApiResponse<AdminListResponse> {
+        return withContext(Dispatchers.IO) {
+            try {
+                Timber.d("Fetching all admins (company names)")
+                val requestBody = "{}".toRequestBody(jsonMediaType)
+
+                val httpRequest = Request.Builder()
+                    .url("$BASE_URL/api/view-all-admins")
+                    .addHeader("Content-Type", "application/json")
+                    .addHeader("Accept", "application/json")
+                    .post(requestBody)
+                    .build()
+
+                val response = client.newCall(httpRequest).execute()
+                val responseBody = response.body?.string() ?: ""
+                Timber.d("Fetch admins response code: ${response.code}")
+
+                if (responseBody.trimStart().startsWith("<") || responseBody.contains("<!DOCTYPE")) {
+                    Timber.e("Received HTML instead of JSON")
+                    return@withContext ApiResponse.Error("Server configuration error.", response.code)
+                }
+
+                if (response.isSuccessful) {
+                    try {
+                        val successResponse = gson.fromJson(responseBody, AdminListResponse::class.java)
+                        Timber.d("Fetched ${successResponse.count} admins")
+                        ApiResponse.Success(successResponse)
+                    } catch (e: Exception) {
+                        Timber.e(e, "Failed to parse admin list response")
+                        ApiResponse.Error("Invalid response format: ${e.message}", response.code)
+                    }
+                } else {
+                    try {
+                        val errorResponse = gson.fromJson(responseBody, ErrorResponse::class.java)
+                        Timber.e("Fetch admins failed: ${errorResponse.error}")
+                        ApiResponse.Error(errorResponse.error, errorResponse.status_code)
+                    } catch (e: Exception) {
+                        Timber.e(e, "Failed to parse error response")
+                        ApiResponse.Error(responseBody.take(200).ifEmpty { "Unknown error" }, response.code)
+                    }
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Network error fetching admins")
+                ApiResponse.Error("Network error: ${e.message}", 0)
+            }
+        }
+    }
+
     suspend fun pilotLogout(request: PilotLogoutRequest): ApiResponse<MessageResponse> {
         return withContext(Dispatchers.IO) {
             try {
@@ -439,6 +487,7 @@ object ApiService {
 // Request models
 // @SerializedName annotations ensure field names survive R8/ProGuard obfuscation in release builds
 data class PilotRegisterRequest(
+    @SerializedName("company_name") val company_name: String,
     @SerializedName("first_name") val first_name: String,
     @SerializedName("last_name") val last_name: String,
     @SerializedName("email") val email: String,
@@ -496,3 +545,18 @@ sealed class ApiResponse<out T> {
     data class Success<T>(val data: T) : ApiResponse<T>()
     data class Error(val message: String, val statusCode: Int) : ApiResponse<Nothing>()
 }
+
+// Admin / Company list models
+data class AdminInfo(
+    @SerializedName("id") val id: Int,
+    @SerializedName("name") val name: String,
+    @SerializedName("email") val email: String,
+    @SerializedName("mobile_no") val mobile_no: String?,
+    @SerializedName("status") val status: Int
+)
+
+data class AdminListResponse(
+    @SerializedName("count") val count: Int,
+    @SerializedName("data") val data: List<AdminInfo>
+)
+

@@ -79,8 +79,20 @@ fun SignupPage(
     var rePassword by remember { mutableStateOf("") }
     var expanded by remember { mutableStateOf(false) }
 
+    // Company name dropdown state
+    var selectedCompanyName by remember { mutableStateOf("") }
+    var companyDropdownExpanded by remember { mutableStateOf(false) }
+
+    val companyNames by authViewModel.companyNames.observeAsState(emptyList())
+    val companyNamesLoading by authViewModel.companyNamesLoading.observeAsState(false)
+
     val authState by authViewModel.authState.observeAsState()
     val context = LocalContext.current
+
+    // Fetch company names when the page loads
+    LaunchedEffect(Unit) {
+        authViewModel.fetchCompanyNames()
+    }
 
     // Handle auth state changes
     LaunchedEffect(authState) {
@@ -142,6 +154,61 @@ fun SignupPage(
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
+
+                // Company Name Dropdown
+                Box {
+                    OutlinedTextField(
+                        value = if (companyNamesLoading) "Loading..." else selectedCompanyName,
+                        onValueChange = { },
+                        readOnly = true,
+                        label = { Text(text = AppStrings.companyName) },
+                        placeholder = { Text(text = AppStrings.selectCompany) },
+                        trailingIcon = {
+                            if (companyNamesLoading) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier
+                                        .padding(4.dp)
+                                        .width(20.dp)
+                                        .height(20.dp),
+                                    strokeWidth = 2.dp,
+                                    color = Color.Black
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.ArrowDropDown,
+                                    contentDescription = "Select Company",
+                                    modifier = Modifier.clickable {
+                                        if (companyNames.isNotEmpty()) companyDropdownExpanded = true
+                                    },
+                                    tint = Color.Black
+                                )
+                            }
+                        },
+                        modifier = Modifier.clickable {
+                            if (!companyNamesLoading && companyNames.isNotEmpty()) {
+                                companyDropdownExpanded = true
+                            }
+                        },
+                        colors = textFieldColors,
+                        singleLine = true
+                    )
+                    DropdownMenu(
+                        expanded = companyDropdownExpanded,
+                        onDismissRequest = { companyDropdownExpanded = false }
+                    ) {
+                        companyNames.forEach { name ->
+                            DropdownMenuItem(
+                                text = { Text(name) },
+                                onClick = {
+                                    selectedCompanyName = name
+                                    companyDropdownExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
 
                 // First Name
                 OutlinedTextField(
@@ -258,6 +325,7 @@ fun SignupPage(
                             val fullMobileNumber = "$countryCode$mobileNumber"
                             authViewModel.signup(
                                 context,
+                                selectedCompanyName,
                                 firstName,
                                 lastName,
                                 email,

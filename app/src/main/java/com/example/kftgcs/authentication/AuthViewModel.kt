@@ -17,6 +17,16 @@ class AuthViewModel : ViewModel() {
     private val _registrationEmail = MutableLiveData<String>()
     val registrationEmail: LiveData<String> = _registrationEmail
 
+    // Company names (admin names) for the signup dropdown
+    private val _companyNames = MutableLiveData<List<String>>(emptyList())
+    val companyNames: LiveData<List<String>> = _companyNames
+
+    private val _companyNamesLoading = MutableLiveData(false)
+    val companyNamesLoading: LiveData<Boolean> = _companyNamesLoading
+
+    private val _companyNamesError = MutableLiveData<String?>(null)
+    val companyNamesError: LiveData<String?> = _companyNamesError
+
     init {
         _authState.value = AuthState.Unauthenticated
     }
@@ -26,6 +36,37 @@ class AuthViewModel : ViewModel() {
             _authState.value = AuthState.Authenticated
         } else {
             _authState.value = AuthState.Unauthenticated
+        }
+    }
+
+    /**
+     * Fetch all admin/company names from backend for the signup dropdown.
+     * Safe to call multiple times — skips if already loaded.
+     */
+    fun fetchCompanyNames() {
+        if (_companyNames.value?.isNotEmpty() == true) return  // Already loaded
+        _companyNamesLoading.value = true
+        _companyNamesError.value = null
+
+        viewModelScope.launch {
+            try {
+                when (val response = ApiService.fetchAllAdmins()) {
+                    is ApiResponse.Success -> {
+                        val names = response.data.data.map { it.name }
+                        _companyNames.postValue(names)
+                        Timber.d("Fetched ${names.size} company names")
+                    }
+                    is ApiResponse.Error -> {
+                        _companyNamesError.postValue(response.message)
+                        Timber.e("Failed to fetch company names: ${response.message}")
+                    }
+                }
+            } catch (e: Exception) {
+                _companyNamesError.postValue("Failed to load companies: ${e.message}")
+                Timber.e(e, "Error fetching company names")
+            } finally {
+                _companyNamesLoading.postValue(false)
+            }
         }
     }
 
@@ -53,6 +94,7 @@ class AuthViewModel : ViewModel() {
      * @return error message if validation fails, null if valid
      */
     private fun validateSignupInput(
+        companyName: String,
         firstName: String,
         lastName: String,
         email: String,
@@ -60,6 +102,8 @@ class AuthViewModel : ViewModel() {
         password: String,
         rePassword: String
     ): String? {
+        // Company name validation
+        if (companyName.isEmpty()) return "Please select a company name"
         // Name validation
         if (firstName.isEmpty()) return "First name is required"
         if (firstName.length > 50) return "First name is too long (max 50 characters)"
@@ -172,6 +216,7 @@ class AuthViewModel : ViewModel() {
 
     fun signup(
         context: Context,
+        companyName: String,
         firstName: String,
         lastName: String,
         email: String,
@@ -179,7 +224,7 @@ class AuthViewModel : ViewModel() {
         password: String,
         rePassword: String
     ) {
-        val validationError = validateSignupInput(firstName, lastName, email, mobileNumber, password, rePassword)
+        val validationError = validateSignupInput(companyName, firstName, lastName, email, mobileNumber, password, rePassword)
         if (validationError != null) {
             _authState.value = AuthState.Error(validationError)
             return
@@ -190,6 +235,7 @@ class AuthViewModel : ViewModel() {
         viewModelScope.launch {
             try {
                 val request = PilotRegisterRequest(
+                    company_name = companyName,
                     first_name = firstName,
                     last_name = lastName,
                     email = email,
