@@ -1,11 +1,18 @@
 package com.example.kftgcs
 
 import android.app.Application
+import androidx.work.Constraints
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
 import com.example.kftgcs.api.SessionManager
 import com.example.kftgcs.security.SecurePinManager
+import com.example.kftgcs.sync.SyncWorker
 import com.example.kftgcs.telemetry.WebSocketManager
 import com.google.android.gms.maps.MapsInitializer
 import timber.log.Timber
+import java.util.concurrent.TimeUnit
 
 /**
  * Custom Application class to handle app-level initialization and crash detection.
@@ -71,6 +78,11 @@ class GCSApplication : Application() {
         // Initialize offline queue support in WebSocketManager
         WebSocketManager.initWithContext(this)
 
+        // Schedule periodic background sync as a safety net.
+        // Runs every 15 min when CONNECTED; ExistingPeriodicWorkPolicy.KEEP
+        // ensures only one instance is ever enqueued across app restarts.
+        scheduleSyncWorker()
+
         // Migrate any plaintext data to secure encrypted storage (one-time operation)
         migrateToSecureStorage()
 
@@ -78,6 +90,23 @@ class GCSApplication : Application() {
         setupCrashHandler()
 
         Timber.i("✓ Application initialized with crash handler")
+    }
+
+    private fun scheduleSyncWorker() {
+        val request = PeriodicWorkRequestBuilder<SyncWorker>(15, TimeUnit.MINUTES)
+            .setConstraints(
+                Constraints.Builder()
+                    .setRequiredNetworkType(NetworkType.CONNECTED)
+                    .build()
+            )
+            .build()
+
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+            SyncWorker.WORK_NAME,
+            ExistingPeriodicWorkPolicy.KEEP,
+            request
+        )
+        Timber.i("SyncWorker scheduled (15-min periodic, CONNECTED constraint)")
     }
 
     /**

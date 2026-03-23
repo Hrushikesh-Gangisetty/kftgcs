@@ -339,22 +339,21 @@ class UnifiedFlightTracker(
                 if (wsManager.isConnected) {
                     delay(500) // Give time for session_ack and mission_created
                     LogUtils.i("UnifiedFlightTracker", "✅ WebSocket ready after ${waitTime}ms")
-
-                    // Send mission status STARTED
-                    if (wsManager.missionId != null) {
-                        wsManager.sendMissionStatus(WebSocketManager.MISSION_STATUS_STARTED)
-                        wsManager.sendMissionEvent(
-                            eventType = "MANUAL_FLIGHT_STARTED",
-                            eventStatus = "INFO",
-                            description = "Manual flight started"
-                        )
-                        LogUtils.i("UnifiedFlightTracker", "✅ Mission status STARTED sent to backend for manual flight")
-                    } else {
-                        LogUtils.w("UnifiedFlightTracker", "⚠️ Skipping mission status - missionId not yet received")
-                    }
-                } else {
-                    LogUtils.w("UnifiedFlightTracker", "⚠️ WebSocket connection timeout for manual flight")
                 }
+
+                // Send mission status STARTED unconditionally.
+                // sendMissionStatus / sendMissionEvent handle offline enqueue
+                // internally if missionId is null or connection is down.
+                wsManager.sendMissionStatus(WebSocketManager.MISSION_STATUS_STARTED)
+                wsManager.sendMissionEvent(
+                    eventType = "MANUAL_FLIGHT_STARTED",
+                    eventStatus = "INFO",
+                    description = "Manual flight started"
+                )
+                LogUtils.i("UnifiedFlightTracker",
+                    "✅ Mission status STARTED sent/queued for manual flight " +
+                    "(connected=${wsManager.isConnected}, missionId=${wsManager.missionId})"
+                )
             } else {
                 LogUtils.i("UnifiedFlightTracker", "✅ WebSocket already connected for manual flight")
             }
@@ -366,6 +365,13 @@ class UnifiedFlightTracker(
     /**
      * Send mission end status for MANUAL mode flights
      * This sends mission summary and disconnects WebSocket
+     *
+     * NOTE: We call sendMissionStatus / sendMissionEvent / sendMissionSummary
+     * unconditionally because those methods already handle offline enqueue
+     * internally when the WebSocket is disconnected.  Previously the guard
+     * `wsManager.isConnected && wsManager.missionId != null` would silently
+     * drop the mission summary if the network dropped right as the drone
+     * landed — a data-loss bug for the most critical message in the flight.
      */
     private fun sendMissionEndForManualFlight(
         reason: String,
@@ -376,49 +382,48 @@ class UnifiedFlightTracker(
     ) {
         try {
             val wsManager = WebSocketManager.getInstance()
-            if (wsManager.isConnected && wsManager.missionId != null) {
-                LogUtils.i("UnifiedFlightTracker", "📤 Sending mission end status for MANUAL flight")
+            LogUtils.i("UnifiedFlightTracker",
+                "📤 Sending mission end status for MANUAL flight " +
+                "(connected=${wsManager.isConnected}, missionId=${wsManager.missionId})")
 
-                // Send mission status ENDED
-                wsManager.sendMissionStatus(WebSocketManager.MISSION_STATUS_ENDED)
-                wsManager.sendMissionEvent(
-                    eventType = "MANUAL_FLIGHT_ENDED",
-                    eventStatus = "INFO",
-                    description = "Manual flight ended - $reason"
-                )
+            // Send mission status ENDED — will enqueue offline if disconnected
+            wsManager.sendMissionStatus(WebSocketManager.MISSION_STATUS_ENDED)
+            wsManager.sendMissionEvent(
+                eventType = "MANUAL_FLIGHT_ENDED",
+                eventStatus = "INFO",
+                description = "Manual flight ended - $reason"
+            )
 
-                // Convert distance to acres (approximate: 1 acre = 4047 m²)
-                // Using distance as rough area approximation (actual area calculation would need more data)
-                val totalAcres = totalDistance / 4047.0
-                val sprayedAcres = sprayedDistance / 4047.0
+            // Convert distance to acres (approximate: 1 acre = 4047 m²)
+            val totalAcres = totalDistance / 4047.0
+            val sprayedAcres = sprayedDistance / 4047.0
 
-                // Send mission summary
-                val flyingTimeMinutes = flightTime / 60.0
-                val batteryEnd = sharedViewModel.telemetryState.value.batteryPercent ?: 0
+            // Send mission summary — will enqueue offline if disconnected
+            val flyingTimeMinutes = flightTime / 60.0
+            val batteryEnd = sharedViewModel.telemetryState.value.batteryPercent ?: 0
 
-                // Get plot name, project name, and crop type from SharedViewModel
-                val plotName = sharedViewModel.currentPlotName.value
-                val projectName = sharedViewModel.currentProjectName.value
-                val cropType = sharedViewModel.currentCropType.value
+            // Get plot name, project name, and crop type from SharedViewModel
+            val plotName = sharedViewModel.currentPlotName.value
+            val projectName = sharedViewModel.currentProjectName.value
+            val cropType = sharedViewModel.currentCropType.value
 
-                wsManager.sendMissionSummary(
-                    totalAcres = totalAcres,
-                    totalSprayUsed = consumedLitres?.toDouble() ?: 0.0,
-                    flyingTimeMinutes = flyingTimeMinutes,
-                    averageSpeed = 0.0,
-                    batteryStart = wsManager.missionBatteryStart,
-                    batteryEnd = batteryEnd,
-                    alertsCount = wsManager.missionAlertsCount,
-                    status = "COMPLETED",
-                    projectName = projectName,
-                    plotName = plotName,
-                    cropType = cropType
-                )
+            wsManager.sendMissionSummary(
+                totalAcres = totalAcres,
+                totalSprayUsed = consumedLitres?.toDouble() ?: 0.0,
+                flyingTimeMinutes = flyingTimeMinutes,
+                averageSpeed = 0.0,
+                batteryStart = wsManager.missionBatteryStart,
+                batteryEnd = batteryEnd,
+                alertsCount = wsManager.missionAlertsCount,
+                status = "COMPLETED",
+                projectName = projectName,
+                plotName = plotName,
+                cropType = cropType,
+                totalSprayedAcres = sprayedAcres
+            )
 
-                LogUtils.i("UnifiedFlightTracker", "✅ Mission summary sent for manual flight (plot=$plotName, project=$projectName)")
-            } else {
-                LogUtils.w("UnifiedFlightTracker", "⚠️ Cannot send mission end - WebSocket not connected or no missionId")
-            }
+            LogUtils.i("UnifiedFlightTracker",
+                "✅ Mission summary sent/queued for manual flight (plot=$plotName, project=$projectName)")
         } catch (e: Exception) {
             LogUtils.e("UnifiedFlightTracker", "❌ Failed to send mission end for manual flight: ${e.message}")
         }

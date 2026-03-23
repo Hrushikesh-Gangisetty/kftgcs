@@ -177,4 +177,7 @@ dependencies {
 
     // Timber for secure logging (only logs in debug builds)
     implementation("com.jakewharton.timber:timber:5.0.1")
+
+    // WorkManager — background offline-sync worker
+    implementation("androidx.work:work-runtime-ktx:2.9.0")
 }

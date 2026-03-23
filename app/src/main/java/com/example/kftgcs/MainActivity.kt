@@ -175,7 +175,7 @@ class MainActivity : ComponentActivity() {
 
                         // 🔥 Low Battery Event Detection
                         val batteryPercent = telemetryState.batteryPercent
-                        if (batteryPercent != null && batteryPercent <= 20 && !lowBatteryEventSent && wsManager.isConnected) {
+                        if (batteryPercent != null && batteryPercent <= 20 && !lowBatteryEventSent) {
                             try {
                                 wsManager.sendMissionEvent(
                                     eventType = "LOW_BATTERY",

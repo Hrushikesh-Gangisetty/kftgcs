@@ -1,6 +1,8 @@
 package com.example.kftgcs.database
 
 import androidx.room.TypeConverter
+import com.divpundir.mavlink.api.MavEnumValue
+import com.divpundir.mavlink.definitions.common.MavMissionType
 import com.divpundir.mavlink.definitions.common.MissionItemInt
 import com.google.android.gms.maps.model.LatLng
 import com.google.gson.*
@@ -50,19 +52,19 @@ class MissionTemplateTypeConverters {
             val jsonObject = json.asJsonObject
 
             // Read missionType if present (backward compatible with older saved data)
-            val missionType = if (jsonObject.has("missionType")) {
-                com.divpundir.mavlink.api.MavEnumValue.fromValue(jsonObject.get("missionType").asInt.toUInt())
+            val missionType: MavEnumValue<MavMissionType> = if (jsonObject.has("missionType")) {
+                MavEnumValue.fromValue(jsonObject.get("missionType").asInt.toUInt())
             } else {
                 Log.w("MissionTypeConverter", "missionType field missing in saved data, using default MISSION type")
-                com.divpundir.mavlink.api.MavEnumValue.fromValue(0u) // Default: MAV_MISSION_TYPE_MISSION
+                MavEnumValue.fromValue(0u) // Default: MAV_MISSION_TYPE_MISSION
             }
 
             return MissionItemInt(
                 targetSystem = jsonObject.get("targetSystem").asInt.toUByte(),
                 targetComponent = jsonObject.get("targetComponent").asInt.toUByte(),
                 seq = jsonObject.get("seq").asInt.toUShort(),
-                frame = com.divpundir.mavlink.api.MavEnumValue.fromValue(jsonObject.get("frame").asInt.toUInt()),
-                command = com.divpundir.mavlink.api.MavEnumValue.fromValue(jsonObject.get("command").asInt.toUInt()),
+                frame = MavEnumValue.fromValue(jsonObject.get("frame").asInt.toUInt()),
+                command = MavEnumValue.fromValue(jsonObject.get("command").asInt.toUInt()),
                 current = jsonObject.get("current").asInt.toUByte(),
                 autocontinue = jsonObject.get("autocontinue").asInt.toUByte(),
                 param1 = jsonObject.get("param1").asFloat,

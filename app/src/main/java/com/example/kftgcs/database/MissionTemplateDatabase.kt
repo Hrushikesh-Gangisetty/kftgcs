@@ -66,10 +66,13 @@ abstract class MissionTemplateDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     """CREATE TABLE IF NOT EXISTS offline_messages (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-                        messageType TEXT NOT NULL,
-                        payload TEXT NOT NULL,
-                        createdAt INTEGER NOT NULL
+                        id          INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        clientId    TEXT    NOT NULL DEFAULT '',
+                        messageType TEXT    NOT NULL,
+                        payload     TEXT    NOT NULL,
+                        createdAt   INTEGER NOT NULL,
+                        retryCount  INTEGER NOT NULL DEFAULT 0,
+                        status      TEXT    NOT NULL DEFAULT 'PENDING'
                     )"""
                 )
             }

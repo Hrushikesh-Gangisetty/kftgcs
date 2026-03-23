@@ -157,20 +157,19 @@ class SharedViewModel : ViewModel() {
                     if (wsManager.isConnected) {
                         delay(500) // Give time for session_ack and mission_created
                         LogUtils.i("SharedVM", "✅ Auto-connect: WebSocket ready after ${waitTime}ms")
-
-                        // Send mission started status
-                        if (wsManager.missionId != null) {
-                            wsManager.sendMissionStatus(WebSocketManager.MISSION_STATUS_STARTED)
-                            wsManager.sendMissionEvent(
-                                eventType = "MISSION_STARTED",
-                                eventStatus = "INFO",
-                                description = "Mission started (auto-detected via mode change)"
-                            )
-                            LogUtils.i("SharedVM", "✅ Auto-connect: Mission status STARTED sent to backend")
-                        }
                     } else {
                         LogUtils.w("SharedVM", "⚠️ Auto-connect: WebSocket failed to connect within timeout")
                     }
+
+                    // Send mission started status unconditionally — sendMissionStatus
+                    // handles offline enqueue if socket/missionId not ready yet.
+                    wsManager.sendMissionStatus(WebSocketManager.MISSION_STATUS_STARTED)
+                    wsManager.sendMissionEvent(
+                        eventType = "MISSION_STARTED",
+                        eventStatus = "INFO",
+                        description = "Mission started (auto-detected via mode change)"
+                    )
+                    LogUtils.i("SharedVM", "✅ Auto-connect: Mission status STARTED sent/queued (connected=${wsManager.isConnected}, missionId=${wsManager.missionId})")
                 } else {
                     LogUtils.i("SharedVM", "✅ WebSocket already connected - no action needed")
                 }
@@ -2749,20 +2748,17 @@ class SharedViewModel : ViewModel() {
                     }
 
                     // ✅ Send mission status STARTED to backend (crash-safe)
-                    // Only send if WebSocket is connected and has a mission_id
+                    // sendMissionStatus/sendMissionEvent handle offline enqueue
+                    // internally if the socket is down or missionId not yet received.
                     try {
                         val wsManager = WebSocketManager.getInstance()
-                        if (wsManager.isConnected && wsManager.missionId != null) {
-                            wsManager.sendMissionStatus(WebSocketManager.MISSION_STATUS_STARTED)
-                            wsManager.sendMissionEvent(
-                                eventType = "MISSION_STARTED",
-                                eventStatus = "INFO",
-                                description = "Mission started successfully"
-                            )
-                            LogUtils.i("SharedVM", "✅ Mission status STARTED sent to backend")
-                        } else {
-                            LogUtils.w("SharedVM", "⚠️ Skipping mission status - WebSocket not ready (connected=${wsManager.isConnected}, missionId=${wsManager.missionId})")
-                        }
+                        wsManager.sendMissionStatus(WebSocketManager.MISSION_STATUS_STARTED)
+                        wsManager.sendMissionEvent(
+                            eventType = "MISSION_STARTED",
+                            eventStatus = "INFO",
+                            description = "Mission started successfully"
+                        )
+                        LogUtils.i("SharedVM", "✅ Mission status STARTED sent/queued (connected=${wsManager.isConnected}, missionId=${wsManager.missionId})")
                     } catch (e: Exception) {
                         LogUtils.e("SharedVM", "Failed to send STARTED status", e)
                     }
