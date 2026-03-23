@@ -159,6 +159,7 @@ class WebSocketManager {
 
     var adminId: Int = -1
     var pilotId: Int = -1
+    var superAdminId: Int = -1
 
     var droneUid: String = ""
         set(value) {
@@ -269,7 +270,7 @@ class WebSocketManager {
         isReconnecting    = false
 
         try {
-            android.util.Log.i(TAG, "Connecting to $wsUrl (pilot=$pilotId admin=$adminId)")
+            android.util.Log.i(TAG, "Connecting to $wsUrl (pilot=$pilotId admin=$adminId superAdmin=$superAdminId)")
             webSocket = client.newWebSocket(Request.Builder().url(wsUrl).build(), socketListener)
         } catch (e: Exception) {
             android.util.Log.e(TAG, "WebSocket connection failed: ${e.message}", e)
@@ -342,6 +343,7 @@ class WebSocketManager {
                     put("vehicle_name",      vehicleName)
                     put("admin_id",          adminId)
                     put("pilot_id",          pilotId)
+                    put("super_admin_id",    superAdminId)
                     put("drone_uid",         droneUidToSend)
                     put("plot_name",         selectedPlotName)
                     put("flight_mode",       selectedFlightMode)
@@ -482,6 +484,7 @@ class WebSocketManager {
                 put("type",       "drone_uid_update")
                 put("mission_id", missionId)
                 put("drone_uid",  realUid)
+                put("super_admin_id", superAdminId)
             }.toString())
         } catch (e: Exception) { /* ignore */ }
     }
@@ -496,6 +499,7 @@ class WebSocketManager {
                 put("ts",         System.currentTimeMillis())
                 put("pilot_id",   pilotId)
                 put("admin_id",   adminId)
+                put("super_admin_id", superAdminId)
                 put("mission_id", missionId)
                 put("drone_uid",  resolveDroneUid())
 
@@ -530,6 +534,7 @@ class WebSocketManager {
             put("mission_id", missionId)
             put("status",     status)
             put("drone_uid",  resolveDroneUid())
+            put("super_admin_id", superAdminId)
         }.toString()
 
         if (!isConnected || !::webSocket.isInitialized || missionId == null) {
@@ -553,6 +558,7 @@ class WebSocketManager {
             put("event_status", eventStatus)
             put("description",  description)
             put("drone_uid",    resolveDroneUid())
+            put("super_admin_id", superAdminId)
             // Always include mission_id key so syncPendingMessages() can reliably
             // overwrite it with the current session's missionId during flush.
             put("mission_id",   missionId ?: JSONObject.NULL)
@@ -587,6 +593,7 @@ class WebSocketManager {
             put("type",                "mission_summary")
             put("mission_id",          missionId)
             put("drone_uid",           resolveDroneUid())
+            put("super_admin_id",      superAdminId)
             put("total_acres",         totalAcres)
             put("total_spray_used",    totalSprayUsed)
             put("flying_time_minutes", flyingTimeMinutes)

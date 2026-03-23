@@ -84,15 +84,17 @@ class MainActivity : ComponentActivity() {
         // ✅ Get pilotId and adminId from SessionManager (values from database after login)
         val pilotId = SessionManager.getPilotId(this)
         val adminId = SessionManager.getAdminId(this)
+        val superAdminId = SessionManager.getSuperAdminId(this)
 
 
         // ✅ Pre-set the values on WebSocketManager (connection happens on mission start)
         wsManager.pilotId = pilotId
         wsManager.adminId = adminId
+        wsManager.superAdminId = superAdminId
         wsManager.droneUid = ""  // Will be updated when FC sends AUTOPILOT_VERSION (leave blank to force real UID)
 
         if (BuildConfig.DEBUG) {
-            android.util.Log.d("MAIN_ACTIVITY", "🔧 WebSocketManager initialized with pilotId=$pilotId, adminId=$adminId")
+            android.util.Log.d("MAIN_ACTIVITY", "🔧 WebSocketManager initialized with pilotId=$pilotId, adminId=$adminId, superAdminId=$superAdminId")
             android.util.Log.d("MAIN_ACTIVITY", "⏳ Waiting for AUTOPILOT_VERSION to set real drone UID...")
         }
 

@@ -120,9 +120,11 @@ class SharedViewModel : ViewModel() {
                     GCSApplication.getInstance()?.let { app ->
                         val pilotId = com.example.kftgcs.api.SessionManager.getPilotId(app)
                         val adminId = com.example.kftgcs.api.SessionManager.getAdminId(app)
+                        val superAdminId = com.example.kftgcs.api.SessionManager.getSuperAdminId(app)
                         wsManager.pilotId = pilotId
                         wsManager.adminId = adminId
-                        LogUtils.i("SharedVM", "📋 Auto-connect: Updated WebSocket credentials: pilotId=$pilotId, adminId=$adminId")
+                        wsManager.superAdminId = superAdminId
+                        LogUtils.i("SharedVM", "📋 Auto-connect: Updated WebSocket credentials: pilotId=$pilotId, adminId=$adminId, superAdminId=$superAdminId")
 
                         if (pilotId <= 0) {
                             LogUtils.e("SharedVM", "⚠️ WARNING: pilotId=$pilotId - User may not be logged in! Telemetry will not be saved.")
@@ -2702,9 +2704,11 @@ class SharedViewModel : ViewModel() {
                             GCSApplication.getInstance()?.let { app ->
                                 val pilotId = com.example.kftgcs.api.SessionManager.getPilotId(app)
                                 val adminId = com.example.kftgcs.api.SessionManager.getAdminId(app)
+                                val superAdminId = com.example.kftgcs.api.SessionManager.getSuperAdminId(app)
                                 wsManager.pilotId = pilotId
                                 wsManager.adminId = adminId
-                                LogUtils.i("SharedVM", "📋 Updated WebSocket credentials: pilotId=$pilotId, adminId=$adminId")
+                                wsManager.superAdminId = superAdminId
+                                LogUtils.i("SharedVM", "📋 Updated WebSocket credentials: pilotId=$pilotId, adminId=$adminId, superAdminId=$superAdminId")
 
                                 // Warn if pilot is not logged in
                                 if (pilotId <= 0) {

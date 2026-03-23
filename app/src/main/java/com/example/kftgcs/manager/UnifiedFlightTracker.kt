@@ -295,9 +295,11 @@ class UnifiedFlightTracker(
                 GCSApplication.getInstance()?.let { app ->
                     val pilotId = SessionManager.getPilotId(app)
                     val adminId = SessionManager.getAdminId(app)
+                    val superAdminId = SessionManager.getSuperAdminId(app)
                     wsManager.pilotId = pilotId
                     wsManager.adminId = adminId
-                    LogUtils.i("UnifiedFlightTracker", "📋 Updated WebSocket credentials: pilotId=$pilotId, adminId=$adminId")
+                    wsManager.superAdminId = superAdminId
+                    LogUtils.i("UnifiedFlightTracker", "📋 Updated WebSocket credentials: pilotId=$pilotId, adminId=$adminId, superAdminId=$superAdminId")
 
                     // Warn if pilot is not logged in
                     if (pilotId <= 0) {

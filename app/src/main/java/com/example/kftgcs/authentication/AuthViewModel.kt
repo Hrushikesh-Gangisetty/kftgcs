@@ -137,8 +137,8 @@ class AuthViewModel : ViewModel() {
                 Timber.d("Calling ApiService.pilotLogin...")
                 when (val response = ApiService.pilotLogin(request)) {
                     is ApiResponse.Success -> {
-                        Timber.d("Login SUCCESS - pilot_id: ${response.data.pilot_id}, message: ${response.data.message}")
-                        SessionManager.saveSession(context, email, response.data.pilot_id)
+                        Timber.d("Login SUCCESS - pilot_id: ${response.data.pilot_id}, admin_id: ${response.data.admin_id}, superadmin_id: ${response.data.superadmin_id}, message: ${response.data.message}")
+                        SessionManager.saveSession(context, email, response.data.pilot_id, response.data.admin_id, response.data.superadmin_id)
                         _authState.value = AuthState.Authenticated
                     }
                     is ApiResponse.Error -> {

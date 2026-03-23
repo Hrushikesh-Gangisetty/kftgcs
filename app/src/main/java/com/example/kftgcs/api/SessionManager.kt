@@ -27,6 +27,7 @@ object SessionManager {
     private const val KEY_EMAIL = "email"
     private const val KEY_PILOT_ID = "pilot_id"
     private const val KEY_ADMIN_ID = "admin_id"
+    private const val KEY_SUPER_ADMIN_ID = "super_admin_id"
     private const val KEY_IS_LOGGED_IN = "is_logged_in"
     private const val KEY_FIRST_NAME = "first_name"
     private const val KEY_LAST_NAME = "last_name"
@@ -120,11 +121,12 @@ object SessionManager {
         }
     }
 
-    fun saveSession(context: Context, email: String, pilotId: Int, adminId: Int = 1) {
+    fun saveSession(context: Context, email: String, pilotId: Int, adminId: Int = 1, superAdminId: Int = -1) {
         getPreferences(context).edit {
             putString(KEY_EMAIL, email)
             putInt(KEY_PILOT_ID, pilotId)
             putInt(KEY_ADMIN_ID, adminId)
+            if (superAdminId > 0) putInt(KEY_SUPER_ADMIN_ID, superAdminId)
             putBoolean(KEY_IS_LOGGED_IN, true)
         }
     }
@@ -132,6 +134,12 @@ object SessionManager {
     fun saveAdminId(context: Context, adminId: Int) {
         getPreferences(context).edit {
             putInt(KEY_ADMIN_ID, adminId)
+        }
+    }
+
+    fun saveSuperAdminId(context: Context, superAdminId: Int) {
+        getPreferences(context).edit {
+            putInt(KEY_SUPER_ADMIN_ID, superAdminId)
         }
     }
 
@@ -152,6 +160,10 @@ object SessionManager {
 
     fun getAdminId(context: Context): Int {
         return getPreferences(context).getInt(KEY_ADMIN_ID, 1) // Default to 1 if not set (matches DB)
+    }
+
+    fun getSuperAdminId(context: Context): Int {
+        return getPreferences(context).getInt(KEY_SUPER_ADMIN_ID, -1)
     }
 
     fun isLoggedIn(context: Context): Boolean {

@@ -477,6 +477,8 @@ data class PilotRegisterResponse(
 data class PilotLoginResponse(
     @SerializedName("message") val message: String,
     @SerializedName("pilot_id") val pilot_id: Int,
+    @SerializedName("admin_id") val admin_id: Int = 1,
+    @SerializedName("superadmin_id") val superadmin_id: Int = -1,
     @SerializedName("status_code") val status_code: Int
 )
 
