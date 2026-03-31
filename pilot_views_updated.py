@@ -336,6 +336,8 @@ def pilot_login(request):
         return JsonResponse({
             "message": "Login successful",
             "pilot_id": pilot.id,
+            "admin_id": pilot.admin_id,
+            "superadmin_id": pilot.superadmin_id if hasattr(pilot, 'superadmin_id') and pilot.superadmin_id else -1,
             "status_code": 200
         }, status=200)
 

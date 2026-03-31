@@ -86,6 +86,20 @@ class TelemetryConsumer(AsyncWebsocketConsumer):
 
                 print(f"📋 Session data: vehicle={vehicle_id}, pilot={pilot_id}, admin={admin_id}, plot={plot_name}", flush=True)
 
+                # 🔥 FIX: If admin_id is missing/invalid, look it up from pilot's record
+                if not admin_id or admin_id == -1:
+                    async with db.pool.acquire() as conn:
+                        row = await conn.fetchrow(
+                            "SELECT admin_id FROM pavaman_gcs_app_pilot WHERE id = $1", pilot_id
+                        )
+                        if row:
+                            admin_id = row["admin_id"]
+                            print(f"🔧 admin_id resolved from pilot record: {admin_id}", flush=True)
+                        else:
+                            print(f"❌ Could not resolve admin_id for pilot_id={pilot_id}", flush=True)
+                            await self.close()
+                            return
+
                 mission_id = uuid.uuid4()
 
                 async with db.pool.acquire() as conn:

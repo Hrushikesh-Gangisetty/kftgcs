@@ -270,7 +270,13 @@ class WebSocketManager {
         isReconnecting    = false
 
         try {
-            android.util.Log.i(TAG, "Connecting to $wsUrl (pilot=$pilotId admin=$adminId superAdmin=$superAdminId)")
+            android.util.Log.i(TAG, "┌─── WebSocket CONNECT ───")
+            android.util.Log.i(TAG, "│ URL:          $wsUrl")
+            android.util.Log.i(TAG, "│ pilotId:      $pilotId")
+            android.util.Log.i(TAG, "│ adminId:      $adminId")
+            android.util.Log.i(TAG, "│ superAdminId: $superAdminId")
+            android.util.Log.i(TAG, "│ droneUid:     $droneUid")
+            android.util.Log.i(TAG, "└──────────────────────────")
             webSocket = client.newWebSocket(Request.Builder().url(wsUrl).build(), socketListener)
         } catch (e: Exception) {
             android.util.Log.e(TAG, "WebSocket connection failed: ${e.message}", e)
@@ -351,7 +357,15 @@ class WebSocketManager {
                     put("grid_setup_source", gridSetupSource)
                 }.toString()
 
-                android.util.Log.i(TAG, "Sending session_start: $payload")
+                android.util.Log.i(TAG, "┌─── session_start PAYLOAD ───")
+                android.util.Log.i(TAG, "│ admin_id:      $adminId")
+                android.util.Log.i(TAG, "│ pilot_id:      $pilotId")
+                android.util.Log.i(TAG, "│ super_admin_id: $superAdminId")
+                android.util.Log.i(TAG, "│ drone_uid:     $droneUidToSend")
+                android.util.Log.i(TAG, "│ vehicle_name:  $vehicleName")
+                android.util.Log.i(TAG, "│ plot_name:     $selectedPlotName")
+                android.util.Log.i(TAG, "│ Full JSON:     $payload")
+                android.util.Log.i(TAG, "└─────────────────────────────")
                 webSocket.send(payload)
             } catch (e: Exception) {
                 android.util.Log.e(TAG, "Failed to send session_start: ${e.message}", e)
@@ -374,7 +388,9 @@ class WebSocketManager {
             try {
                 val msg  = JSONObject(text)
                 val type = msg.getString("type")
-                android.util.Log.i(TAG, "Received: $type")
+                android.util.Log.i(TAG, "┌─── WS RECEIVED: $type ───")
+                android.util.Log.i(TAG, "│ Raw: $text")
+                android.util.Log.i(TAG, "└──────────────────────────")
 
                 when (type) {
                     "session_ack" -> {
@@ -383,6 +399,7 @@ class WebSocketManager {
                         readyForTelemetry      = true
                         telemetryEnabled       = true
                         sessionAckReceivedTime = System.currentTimeMillis()
+                        android.util.Log.i(TAG, "✅ session_ack received — telemetry enabled (adminId=$adminId, pilotId=$pilotId)")
 
                         val uid = droneUid.trim()
                         if (uid.isNotBlank() && uid != "SITL_DRONE_001") {
@@ -394,13 +411,16 @@ class WebSocketManager {
                         missionId         = msg.getString("mission_id")
                         readyForTelemetry = true
                         reconnectAttempts = 0
-                        android.util.Log.i(TAG, "Mission created: missionId=$missionId")
+                        android.util.Log.i(TAG, "✅ mission_created: missionId=$missionId (adminId=$adminId, pilotId=$pilotId)")
 
                         startDelayedDroneUidMonitoring()
                         syncPendingMessages()     // Flush offline queue
                     }
 
-                    "error" -> android.util.Log.e(TAG, "Backend error: $text")
+                    "error" -> {
+                        android.util.Log.e(TAG, "❌ Backend error: $text")
+                        android.util.Log.e(TAG, "   (adminId=$adminId, pilotId=$pilotId, missionId=$missionId)")
+                    }
                 }
             } catch (e: Exception) {
                 android.util.Log.w(TAG, "Failed to parse message: ${e.message}")
@@ -477,6 +497,9 @@ class WebSocketManager {
 
     private fun resolveDroneUid() = droneUid.ifBlank { "SITL_DRONE_001" }
 
+    // Counter for periodic telemetry logging (avoid log spam)
+    private var telemetrySendCount = 0
+
     private fun sendDroneUidUpdate(realUid: String) {
         if (!isConnected || !::webSocket.isInitialized) return
         try {
@@ -492,6 +515,12 @@ class WebSocketManager {
     fun sendTelemetry() {
         if (!isConnected || !readyForTelemetry || !sessionStarted) return
         if (!::webSocket.isInitialized || missionId == null)       return
+
+        telemetrySendCount++
+        // Log on first send and every 60th send to avoid spam
+        if (telemetrySendCount == 1 || telemetrySendCount % 60 == 0) {
+            android.util.Log.i(TAG, "📡 sendTelemetry #$telemetrySendCount — adminId=$adminId, pilotId=$pilotId, superAdminId=$superAdminId, missionId=$missionId, droneUid=${resolveDroneUid()}")
+        }
 
         try {
             webSocket.send(JSONObject().apply {
@@ -529,6 +558,7 @@ class WebSocketManager {
     }
 
     fun sendMissionStatus(status: Int) {
+        android.util.Log.i(TAG, "📋 sendMissionStatus: status=$status, missionId=$missionId, adminId=$adminId, pilotId=$pilotId")
         val payload = JSONObject().apply {
             put("type",       "mission_status")
             put("mission_id", missionId)
