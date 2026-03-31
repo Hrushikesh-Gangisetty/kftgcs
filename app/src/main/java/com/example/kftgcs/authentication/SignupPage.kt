@@ -85,6 +85,7 @@ fun SignupPage(
 
     val companyNames by authViewModel.companyNames.observeAsState(emptyList())
     val companyNamesLoading by authViewModel.companyNamesLoading.observeAsState(false)
+    val companyNamesError by authViewModel.companyNamesError.observeAsState(null)
 
     val authState by authViewModel.authState.observeAsState()
     val context = LocalContext.current
@@ -93,6 +94,7 @@ fun SignupPage(
     LaunchedEffect(Unit) {
         authViewModel.fetchCompanyNames()
     }
+
 
     // Handle auth state changes
     LaunchedEffect(authState) {
@@ -198,12 +200,30 @@ fun SignupPage(
                     ) {
                         companyNames.forEach { name ->
                             DropdownMenuItem(
-                                text = { Text(name) },
+                                text = { Text(name ?: "") },
                                 onClick = {
-                                    selectedCompanyName = name
+                                    selectedCompanyName = name ?: ""
                                     companyDropdownExpanded = false
                                 }
                             )
+                        }
+                    }
+                }
+
+                // Show error + retry if company names failed to load
+                if (companyNamesError != null && !companyNamesLoading) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(top = 4.dp)
+                    ) {
+                        Text(
+                            text = "Failed to load companies",
+                            fontSize = 12.sp,
+                            color = Color.Red
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        TextButton(onClick = { authViewModel.retryFetchCompanyNames() }) {
+                            Text(text = "Retry", fontSize = 12.sp, color = Color.Blue)
                         }
                     }
                 }

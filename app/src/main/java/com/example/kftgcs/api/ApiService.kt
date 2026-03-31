@@ -84,8 +84,8 @@ object ApiService {
             // If using production server (release builds)
             ServerConfig.useProductionServer -> ServerConfig.apiBaseUrl
 
-            // Use configured server IP (physical device) - HTTPS for production domain
-            else -> "https://${ServerConfig.serverIp}"
+            // Development: use DEBUG_API_URL from local.properties (supports http for local server)
+            else -> ServerConfig.apiBaseUrl
         }
         Timber.d("BASE_URL selected: $url (useProduction=${ServerConfig.useProductionServer})")
         url
@@ -390,7 +390,7 @@ object ApiService {
     suspend fun fetchAllAdmins(): ApiResponse<AdminListResponse> {
         return withContext(Dispatchers.IO) {
             try {
-                Timber.d("Fetching all admins (company names)")
+                Timber.d("Fetching all admins from: $BASE_URL/api/view-all-admins")
                 val requestBody = "{}".toRequestBody(jsonMediaType)
 
                 val httpRequest = Request.Builder()
@@ -402,17 +402,17 @@ object ApiService {
 
                 val response = client.newCall(httpRequest).execute()
                 val responseBody = response.body?.string() ?: ""
-                Timber.d("Fetch admins response code: ${response.code}")
+                Timber.d("Fetch admins response code: ${response.code}, body: ${responseBody.take(300)}")
 
                 if (responseBody.trimStart().startsWith("<") || responseBody.contains("<!DOCTYPE")) {
-                    Timber.e("Received HTML instead of JSON")
-                    return@withContext ApiResponse.Error("Server configuration error.", response.code)
+                    Timber.e("Received HTML instead of JSON (code: ${response.code})")
+                    return@withContext ApiResponse.Error("Server returned error (${response.code}). Endpoint may not be deployed.", response.code)
                 }
 
                 if (response.isSuccessful) {
                     try {
                         val successResponse = gson.fromJson(responseBody, AdminListResponse::class.java)
-                        Timber.d("Fetched ${successResponse.count} admins")
+                        Timber.d("Fetched ${successResponse.count} admins: ${successResponse.data.map { it.name }}")
                         ApiResponse.Success(successResponse)
                     } catch (e: Exception) {
                         Timber.e(e, "Failed to parse admin list response")
@@ -424,7 +424,7 @@ object ApiService {
                         Timber.e("Fetch admins failed: ${errorResponse.error}")
                         ApiResponse.Error(errorResponse.error, errorResponse.status_code)
                     } catch (e: Exception) {
-                        Timber.e(e, "Failed to parse error response")
+                        Timber.e(e, "Failed to parse error response: ${responseBody.take(200)}")
                         ApiResponse.Error(responseBody.take(200).ifEmpty { "Unknown error" }, response.code)
                     }
                 }
@@ -549,10 +549,18 @@ sealed class ApiResponse<out T> {
 // Admin / Company list models
 data class AdminInfo(
     @SerializedName("id") val id: Int,
-    @SerializedName("name") val name: String,
-    @SerializedName("email") val email: String,
-    @SerializedName("mobile_no") val mobile_no: String?,
-    @SerializedName("status") val status: Int
+    @SerializedName("name") val name: String? = null,
+    @SerializedName("contact_name") val contact_name: String? = null,
+    @SerializedName("email") val email: String? = null,
+    @SerializedName("mobile_no") val mobile_no: String? = null,
+    @SerializedName("address") val address: String? = null,
+    @SerializedName("drones") val drones: Int? = null,
+    @SerializedName("pilots") val pilots: Int? = null,
+    @SerializedName("logo_url") val logo_url: String? = null,
+    @SerializedName("gst_url") val gst_url: String? = null,
+    @SerializedName("approval") val approval: Int? = null,
+    @SerializedName("status") val status: Int? = null,
+    @SerializedName("created_on") val created_on: String? = null
 )
 
 data class AdminListResponse(

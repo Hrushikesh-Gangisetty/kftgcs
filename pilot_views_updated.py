@@ -375,6 +375,51 @@ def view_pilots(request):
     return JsonResponse({"pilots": pilot_list})
 
 @csrf_exempt
+def view_all_admins(request):
+    try:
+        if request.method != "POST":
+            return JsonResponse({"error": "Only POST allowed."}, status=405)
+
+        data = json.loads(request.body or "{}")
+
+        # superadmin_id = request.session.get("superadmin_id")
+        # if not superadmin_id:
+        #     return JsonResponse({"error": "Unauthorized Login"}, status=401)
+
+        admins = Admin.objects.all().order_by("-id")
+
+        admin_list = []
+        for admin in admins:
+            admin_list.append({
+                "id": admin.id,
+                "name": admin.name,
+                "contact_name": admin.contact_name,
+                "email": admin.email,
+                "mobile_no": admin.mobile_no,
+                "address": admin.address,
+
+                "drones": admin.drones,
+                "pilots": admin.pilots,
+
+                "logo_url": generate_presigned_url(admin.logo_path) if admin.logo_path else None,
+                "gst_url": generate_presigned_url(admin.gst_file_path) if admin.gst_file_path else None,
+
+                "approval": admin.approval,   # 0,1,2,3
+                "status": admin.status,
+
+                "created_on": admin.created_on.strftime("%Y-%m-%d %H:%M:%S") if admin.created_on else None
+            })
+
+        return JsonResponse({
+            "count": len(admin_list),
+            "data": admin_list
+        }, status=200)
+
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
 def pilot_logout(request):
     if request.method != "POST":
         return JsonResponse({"error": "Invalid method"}, status=405)

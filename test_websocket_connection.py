@@ -20,8 +20,12 @@ import time
 import websocket
 from datetime import datetime
 
-# ✅ Your AWS EC2 Backend URL (same as in Android app)
-WS_URL = "ws://65.0.76.31:8000/ws/telemetry/"
+# ✅ Backend WebSocket URL
+# --- ACTIVE: Production domain (works with both AWS and Aiven DB behind it) ---
+WS_URL = "wss://kftgcs.com/ws/telemetry/"
+
+# --- COMMENTED OUT: Direct AWS EC2 IP (uncomment to switch back) ---
+# WS_URL = "ws://65.0.76.31:8000/ws/telemetry/"
 
 # Test data (simulating Android app)
 PILOT_ID = 7  # Your test pilot ID

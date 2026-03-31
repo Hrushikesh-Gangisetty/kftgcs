@@ -351,9 +351,8 @@ fun PlanScreen(
             // Recompute local geofence polygon for preview while planning
             if (geofenceEnabled) {
                 val allWaypoints = mutableListOf<LatLng>()
-                // prefer grid waypoints for buffer, fall back to survey polygon
-                gridResult?.let { res -> allWaypoints.addAll(res.waypoints.map { it.position }) }
-                if (allWaypoints.isEmpty()) allWaypoints.addAll(surveyPolygon)
+                // Use survey polygon boundary so geofence forms outside the grid, not inside
+                allWaypoints.addAll(surveyPolygon)
                 if (allWaypoints.isNotEmpty()) {
                     val bufferDistance = fenceRadius.toDouble()
                     localGeofencePolygon = com.example.kftgcs.utils.GeofenceUtils.generatePolygonBuffer(allWaypoints, bufferDistance)
@@ -2713,8 +2712,8 @@ fun PlanScreen(
         } else {
             val allWaypoints = mutableListOf<LatLng>()
             if (isGridSurveyMode) {
-                gridResult?.let { allWaypoints.addAll(it.waypoints.map { w -> w.position }) }
-                if (allWaypoints.isEmpty()) allWaypoints.addAll(surveyPolygon)
+                // Use survey polygon boundary so geofence forms outside the grid, not inside
+                allWaypoints.addAll(surveyPolygon)
             } else {
                 allWaypoints.addAll(points)
             }

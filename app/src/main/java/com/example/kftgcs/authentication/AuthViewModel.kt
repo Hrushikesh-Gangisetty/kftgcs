@@ -44,21 +44,25 @@ class AuthViewModel : ViewModel() {
      * Safe to call multiple times — skips if already loaded.
      */
     fun fetchCompanyNames() {
-        if (_companyNames.value?.isNotEmpty() == true) return  // Already loaded
+        if (_companyNames.value?.isNotEmpty() == true) {
+            Timber.d("Company names already loaded, skipping fetch")
+            return
+        }
         _companyNamesLoading.value = true
         _companyNamesError.value = null
 
         viewModelScope.launch {
             try {
+                Timber.d("Fetching company names...")
                 when (val response = ApiService.fetchAllAdmins()) {
                     is ApiResponse.Success -> {
-                        val names = response.data.data.map { it.name }
+                        val names = response.data.data.mapNotNull { it.name?.takeIf { n -> n.isNotBlank() } }
                         _companyNames.postValue(names)
-                        Timber.d("Fetched ${names.size} company names")
+                        Timber.d("Fetched ${names.size} company names: $names")
                     }
                     is ApiResponse.Error -> {
                         _companyNamesError.postValue(response.message)
-                        Timber.e("Failed to fetch company names: ${response.message}")
+                        Timber.e("Failed to fetch company names: ${response.message} (code: ${response.statusCode})")
                     }
                 }
             } catch (e: Exception) {
@@ -68,6 +72,15 @@ class AuthViewModel : ViewModel() {
                 _companyNamesLoading.postValue(false)
             }
         }
+    }
+
+    /**
+     * Force retry fetching company names (clears cached list so fetchCompanyNames() won't skip).
+     */
+    fun retryFetchCompanyNames() {
+        _companyNames.value = emptyList()
+        _companyNamesError.value = null
+        fetchCompanyNames()
     }
 
     /**

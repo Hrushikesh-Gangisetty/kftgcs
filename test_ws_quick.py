@@ -8,7 +8,11 @@ Requires: pip install websocket-client
 import json
 import websocket
 
-WS_URL = "ws://65.0.76.31:8000/ws/telemetry/"
+# --- ACTIVE: Production domain ---
+WS_URL = "wss://kftgcs.com/ws/telemetry/"
+
+# --- COMMENTED OUT: Direct AWS EC2 IP (uncomment to switch back) ---
+# WS_URL = "ws://65.0.76.31:8000/ws/telemetry/"
 
 def test():
     print(f"🔌 Connecting to {WS_URL}...")
