@@ -2506,7 +2506,7 @@ class MavlinkTelemetryRepository(
         if (!state.value.fcuDetected) {
             return null
         }
-        
+
         try {
             val receivedItems = mutableListOf<MissionItemInt>()
             val expectedCountDeferred = CompletableDeferred<Int?>()
@@ -2546,7 +2546,7 @@ class MavlinkTelemetryRepository(
             for (seq in 0 until expectedCount) {
                 val seqDeferred = CompletableDeferred<Unit>()
                 perSeqMap[seq] = seqDeferred
-                
+
                 try {
                     val reqItem = MissionRequestInt(targetSystem = fcuSystemId, targetComponent = fcuComponentId, seq = seq.toUShort())
                     connection.trySendUnsignedV2(gcsSystemId, gcsComponentId, reqItem)
@@ -2570,13 +2570,13 @@ class MavlinkTelemetryRepository(
 
             // Sort items by sequence number
             val sortedItems = receivedItems.sortedBy { it.seq.toInt() }
-            
-            
+
+
             if (sortedItems.size != expectedCount) {
             }
-            
+
             return sortedItems
-            
+
         } catch (e: Exception) {
             return null
         }
@@ -2590,7 +2590,7 @@ class MavlinkTelemetryRepository(
         if (!state.value.fcuDetected) {
             return null
         }
-        
+
         try {
             val expectedCountDeferred = CompletableDeferred<Int?>()
 
@@ -2615,9 +2615,9 @@ class MavlinkTelemetryRepository(
 
             val count = withTimeoutOrNull(timeoutMs) { expectedCountDeferred.await() }
             job.cancel()
-            
+
             return count
-            
+
         } catch (e: Exception) {
             return null
         }
@@ -3061,11 +3061,11 @@ class MavlinkTelemetryRepository(
             return emptyList()
         }
 
-        
+
         val resequenced = waypoints.mapIndexed { index, waypoint ->
             // Set current=1 only for HOME (seq 0), all others current=0
             val newCurrent = if (index == 0) 1u else 0u
-            
+
             // Create the resequenced waypoint with proper target system/component
             waypoint.copy(
                 seq = index.toUShort(),
@@ -3078,14 +3078,14 @@ class MavlinkTelemetryRepository(
                 val lon = it.y / 1e7
             }
         }
-        
+
         // Validation check
         val sequences = resequenced.map { it.seq.toInt() }
         val expected = (0 until resequenced.size).toList()
         if (sequences != expected) {
         } else {
         }
-        
+
         // Log final mission structure
         resequenced.forEachIndexed { idx, wp ->
             val cmdName = wp.command.entry?.name ?: "CMD_${wp.command.value}"

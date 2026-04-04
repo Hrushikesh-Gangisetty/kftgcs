@@ -191,15 +191,6 @@ fun MainPage(
                 onToggleMapType = {
                     mapType = if (mapType == MapType.SATELLITE) MapType.NORMAL else MapType.SATELLITE
                 },
-                onStartMission = {
-                    telemetryViewModel.startMission { success, error ->
-                        if (success) {
-                            Toast.makeText(context, "Mission start sent", Toast.LENGTH_SHORT).show()
-                        } else {
-                            Toast.makeText(context, error ?: "Failed to start mission", Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                },
                 onRefresh = {
                     val lat = telemetryState.latitude
                     val lon = telemetryState.longitude
@@ -655,7 +646,6 @@ fun StatusPanel(
 fun FloatingButtons(
     modifier: Modifier = Modifier,
     onToggleMapType: () -> Unit,
-    onStartMission: () -> Unit,
     onRefresh: () -> Unit,
     onCameraClick: () -> Unit = {},
     currentMode: String?
@@ -665,32 +655,6 @@ fun FloatingButtons(
         verticalArrangement = Arrangement.spacedBy(8.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Start Mission Button
-        FloatingActionButton(
-            onClick = { onStartMission() },
-            containerColor = Color.Black.copy(alpha = 0.7f),
-            modifier = Modifier.size(width = 70.dp, height = 56.dp)
-        ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                Icon(
-                    Icons.Default.PlayArrow,
-                    contentDescription = AppStrings.start,
-                    tint = Color.White,
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = AppStrings.start,
-                    color = Color.White,
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.Medium
-                )
-            }
-        }
-
 
         // Recenter Button
         FloatingActionButton(
