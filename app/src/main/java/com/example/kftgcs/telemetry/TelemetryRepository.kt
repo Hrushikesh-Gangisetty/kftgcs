@@ -1042,11 +1042,12 @@ class MavlinkTelemetryRepository(
                             missionTimerJob?.cancel()
                             missionTimerJob = null
 
-                            // === NEW: Detect AUTO â†’ LOITER transition for "Add Resume Here" popup ===
+                            // === NEW: Detect AUTO → LOITER or AUTO → BRAKE transition for "Add Resume Here" popup ===
                             // Only show popup if:
-                            // 1. This is a user-initiated LOITER, not geofence-triggered
+                            // 1. This is a user-initiated LOITER/BRAKE, not geofence-triggered
                             // 2. User selected Automatic mode (not Manual mode)
-                            if (mode.equals("Loiter", ignoreCase = true) && !sharedViewModel.isGeofenceTriggeringModeChange && sharedViewModel.isPauseResumeEnabled()) {
+                            val isLoiterOrBrake = mode.equals("Loiter", ignoreCase = true) || mode.equals("Brake", ignoreCase = true)
+                            if (isLoiterOrBrake && !sharedViewModel.isGeofenceTriggeringModeChange && sharedViewModel.isPauseResumeEnabled()) {
                                 // Get the current waypoint as the resume point
                                 val resumeWaypoint = state.value.lastAutoWaypoint.takeIf { it > 0 }
                                     ?: state.value.currentWaypoint
@@ -1061,10 +1062,10 @@ class MavlinkTelemetryRepository(
                                 if (lastElapsed != null && lastElapsed > 0L) {
                                     _state.update { it.copy(lastMissionElapsedSec = lastElapsed) }
                                 }
-                            } else if (mode.equals("Loiter", ignoreCase = true) && !sharedViewModel.isPauseResumeEnabled()) {
+                            } else if (isLoiterOrBrake && !sharedViewModel.isPauseResumeEnabled()) {
                                 // User is in Manual mode - don't show resume popup
-                            } else if (mode.equals("Loiter", ignoreCase = true)) {
-                                // Geofence triggered this LOITER - don't show resume popup
+                            } else if (isLoiterOrBrake) {
+                                // Geofence triggered this LOITER/BRAKE - don't show resume popup
                             } else {
                                 // Only mark as completed if NOT paused AND not already marked
                                 if (!isPaused && !state.value.missionCompleted) {

@@ -253,12 +253,14 @@ class AuthViewModel : ViewModel() {
     }
 
     fun verifyOtp(context: Context, email: String, otp: String) {
-        if (otp.isEmpty()) {
+        val cleanedOtp = otp.trim().filter { it.isDigit() }
+
+        if (cleanedOtp.isEmpty()) {
             _authState.value = AuthState.Error("OTP cannot be empty")
             return
         }
 
-        val otpInt = otp.toIntOrNull()
+        val otpInt = cleanedOtp.toIntOrNull()
         if (otpInt == null) {
             _authState.value = AuthState.Error("Invalid OTP format")
             return

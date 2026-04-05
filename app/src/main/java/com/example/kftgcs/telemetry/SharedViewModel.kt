@@ -2064,18 +2064,19 @@ class SharedViewModel : ViewModel() {
     val resumeMissionReady: StateFlow<Boolean> = _resumeMissionReady.asStateFlow()
 
     /**
-     * Called when mode changes from AUTO to LOITER (detected in TelemetryRepository)
+     * Called when mode changes from AUTO to LOITER or BRAKE (detected in TelemetryRepository)
      * This shows a popup asking user if they want to set resume point here
      * NOTE: Only works when user selected Automatic mode, not Manual mode
      */
     fun onModeChangedToLoiterFromAuto(waypointNumber: Int) {
         // Safety check: Don't show popup if user is in Manual mode
         if (!isPauseResumeEnabled()) {
-            LogUtils.i("SharedVM", "=== MODE CHANGED: AUTO → LOITER === (IGNORED - user in MANUAL mode)")
+            LogUtils.i("SharedVM", "=== MODE CHANGED: AUTO → LOITER/BRAKE === (IGNORED - user in MANUAL mode)")
             return
         }
 
-        LogUtils.i("SharedVM", "=== MODE CHANGED: AUTO → LOITER ===")
+        val currentMode = _telemetryState.value.mode ?: "Loiter"
+        LogUtils.i("SharedVM", "=== MODE CHANGED: AUTO → $currentMode ===")
         LogUtils.i("SharedVM", "Waypoint at mode change: $waypointNumber")
 
         _resumePointWaypoint.value = waypointNumber
@@ -2104,7 +2105,7 @@ class SharedViewModel : ViewModel() {
 
         addNotification(
             Notification(
-                message = "Mode changed to Loiter at waypoint $waypointNumber",
+                message = "Mode changed to $currentMode at waypoint $waypointNumber",
                 type = NotificationType.INFO
             )
         )

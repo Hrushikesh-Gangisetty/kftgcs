@@ -450,7 +450,7 @@ fun MainPage(
         }
 
         // === SET RESUME POINT POPUP ===
-        // This dialog appears when mode changes from AUTO to LOITER during a mission
+        // This dialog appears when mode changes from AUTO to LOITER or BRAKE during a mission
         if (showSetResumePointPopup) {
             AlertDialog(
                 onDismissRequest = {
