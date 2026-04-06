@@ -27,16 +27,9 @@
 # "error: fields required"
 # ============================================
 
-# Keep all API request/response model classes (preserves field names for Gson)
--keep class com.example.kftgcs.api.PilotRegisterRequest { *; }
--keep class com.example.kftgcs.api.PilotLoginRequest { *; }
--keep class com.example.kftgcs.api.PilotLogoutRequest { *; }
--keep class com.example.kftgcs.api.VerifyOtpRequest { *; }
--keep class com.example.kftgcs.api.ResendOtpRequest { *; }
--keep class com.example.kftgcs.api.PilotRegisterResponse { *; }
--keep class com.example.kftgcs.api.PilotLoginResponse { *; }
--keep class com.example.kftgcs.api.MessageResponse { *; }
--keep class com.example.kftgcs.api.ErrorResponse { *; }
+# Keep ALL API request/response model classes (preserves field names for Gson)
+# Using a wildcard so that any new models added to this package are automatically covered.
+-keep class com.example.kftgcs.api.** { *; }
 
 # Keep Gson TypeToken and related classes
 -keep class com.google.gson.** { *; }
