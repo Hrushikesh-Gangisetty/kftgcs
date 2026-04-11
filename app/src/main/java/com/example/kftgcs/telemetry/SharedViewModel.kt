@@ -349,6 +349,7 @@ class SharedViewModel : ViewModel() {
         _missionAreaFormatted.value = "0 acres"
         _missionUploaded.value = false
         lastUploadedCount = 0
+        lastUploadedMissionItems = emptyList()
 
         // Clear geofence when clearing mission
         clearGeofence()
@@ -1366,6 +1367,46 @@ class SharedViewModel : ViewModel() {
     val missionUploaded: StateFlow<Boolean> = _missionUploaded.asStateFlow()
     var lastUploadedCount by mutableStateOf(0)
 
+    // Store the full uploaded mission items list for command-type lookup
+    // Used by tank-empty detection to identify mission-end sequences (DO_SPRAYER(0), LOITER, RTL, LAND)
+    @Volatile
+    var lastUploadedMissionItems: List<MissionItemInt> = emptyList()
+        private set
+
+    // MAV_CMD IDs for mission-end detection
+    private val MAV_CMD_DO_SPRAYER_ID = 216u
+    private val MAV_CMD_NAV_LOITER_UNLIM_ID = 17u
+    private val MAV_CMD_NAV_RETURN_TO_LAUNCH_ID = 20u
+    private val MAV_CMD_NAV_LAND_ID = 21u
+
+    /**
+     * Check if the given mission sequence number is in the "mission end" phase.
+     * Returns true if:
+     * - The item at [seq] is a terminal nav command (LOITER_UNLIM, RTL, LAND)
+     * - The item at [seq] is DO_SPRAYER with param1=0 (sprayer OFF)
+     * - seq is within the last 3 items of the stored mission
+     * This is used to prevent false "Tank Empty" alerts at end-of-mission.
+     */
+    fun isMissionEndSequence(seq: Int): Boolean {
+        val items = lastUploadedMissionItems
+        if (items.isEmpty()) return false
+
+        // Check if seq is within the last 3 items
+        if (seq >= items.size - 3) return true
+
+        // Check the command type of the item at this sequence
+        val item = items.find { it.seq.toInt() == seq } ?: return false
+        val cmdValue = item.command.value
+
+        return when (cmdValue) {
+            MAV_CMD_NAV_LOITER_UNLIM_ID -> true
+            MAV_CMD_NAV_RETURN_TO_LAUNCH_ID -> true
+            MAV_CMD_NAV_LAND_ID -> true
+            MAV_CMD_DO_SPRAYER_ID -> item.param1 == 0f  // Only DO_SPRAYER(0) = sprayer OFF
+            else -> false
+        }
+    }
+
     // --- Current Mission Names (for tracking which template/mission is active) ---
     private val _currentProjectName = MutableStateFlow("")
     val currentProjectName: StateFlow<String> = _currentProjectName.asStateFlow()
@@ -2253,6 +2294,7 @@ class SharedViewModel : ViewModel() {
                 _resumeMissionReady.value = true
                 _missionUploaded.value = true
                 lastUploadedCount = resequenced.size
+                lastUploadedMissionItems = resequenced.toList()
 
                 LogUtils.i("SharedVM", "═══════════════════════════════════════")
                 LogUtils.i("SharedVM", "✅ Resume mission ready (background processing complete)")
@@ -2457,6 +2499,7 @@ class SharedViewModel : ViewModel() {
                 // Mark mission as uploaded
                 _missionUploaded.value = true
                 lastUploadedCount = resequenced.size
+                lastUploadedMissionItems = resequenced.toList()
                 LogUtils.i("SharedVM", "✅ Mission upload status updated: uploaded=$_missionUploaded, count=$lastUploadedCount")
 
                 // ✅ Restore spray if it was active before pause
@@ -2796,6 +2839,7 @@ class SharedViewModel : ViewModel() {
                 if (success) {
                     LogUtils.i("MissionUpload", "VM: Upload successful, processing waypoints...")
                     lastUploadedCount = missionItems.size
+                    lastUploadedMissionItems = missionItems.toList()
                     val waypoints = missionItems.filter { item ->
                         item.command.value != 20u && !(item.x == 0 && item.y == 0)
                     }.map { item ->
@@ -3348,6 +3392,7 @@ class SharedViewModel : ViewModel() {
                 // Mark mission as uploaded
                 _missionUploaded.value = true
                 lastUploadedCount = resequenced.size
+                lastUploadedMissionItems = resequenced.toList()
                 LogUtils.i("ResumeMission", "✅ Mission upload status updated: uploaded=$_missionUploaded, count=$lastUploadedCount")
 
                 // ✅ Restore spray if it was active before pause

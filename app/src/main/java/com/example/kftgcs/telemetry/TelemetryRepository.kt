@@ -162,13 +162,20 @@ class MavlinkTelemetryRepository(
     private var autoModeSprayDetected = false  // TRUE when flow > 0 detected during current AUTO mission
     private var lastPositiveFlowTime: Long? = null  // Timestamp when flow > 0 was last detected
 
+    // Mission-end phase detection
+    // Set TRUE when we detect the mission has reached its end phase (DO_SPRAYER(0), LOITER, RTL, LAND)
+    // This prevents false "Tank Empty" alerts when the sprayer is intentionally turned off by the mission
+    private var missionEndPhaseActive = false
+
     /**
      * Reset all AUTO mode spray detection state.
      * Called when spray is explicitly disabled (e.g., mode change from Auto)
      * to prevent false "Tank Empty" alerts.
+     * NOTE: Does NOT reset missionEndPhaseActive — that flag persists until
+     * the drone leaves AUTO mode or a new spray pass starts (flow > 0 detected).
      */
     fun resetAutoModeSprayDetection() {
-        LogUtils.i("TankEmpty", "🔄 resetAutoModeSprayDetection() called - clearing all spray/tank state (was: autoSpray=$autoModeSprayDetected, zeroFlowTimer=${zeroFlowStartTime != null}, tankEmptyShown=$tankEmptyNotificationShown)")
+        LogUtils.i("TankEmpty", "🔄 resetAutoModeSprayDetection() called - clearing spray/tank state (was: autoSpray=$autoModeSprayDetected, missionEnd=$missionEndPhaseActive, zeroFlowTimer=${zeroFlowStartTime != null}, tankEmptyShown=$tankEmptyNotificationShown)")
         autoModeSprayDetected = false
         lastPositiveFlowTime = null
         pumpTurnedOnTime = null
@@ -422,6 +429,25 @@ class MavlinkTelemetryRepository(
 
                             // Start monitoring fence status from FC
                             startFenceMonitoring()
+
+                            // ═══ LAYER 3: Query MISSION_COUNT from FC on connect ═══
+                            // If lastUploadedCount is 0 (e.g., reconnect mid-session, or mission
+                            // was pre-stored on the FC), query the FC for the total mission count.
+                            // This ensures the count-based mission-end check works after reconnect.
+                            if (sharedViewModel.lastUploadedCount == 0) {
+                                scope.launch {
+                                    try {
+                                        delay(1000) // Let connection stabilize
+                                        val fcMissionCount = getMissionCount()
+                                        if (fcMissionCount != null && fcMissionCount > 0) {
+                                            sharedViewModel.lastUploadedCount = fcMissionCount
+                                            LogUtils.i("SprayControl", "📋 FC mission count queried on connect: $fcMissionCount items (lastUploadedCount was 0)")
+                                        }
+                                    } catch (e: Exception) {
+                                        LogUtils.w("SprayControl", "⚠️ Failed to query FC mission count on connect: ${e.message}")
+                                    }
+                                }
+                            }
                         }
                     } else if (!state.value.connected) {
                         // FCU was detected before but connection was lost, now it's back
@@ -680,6 +706,12 @@ class MavlinkTelemetryRepository(
                             lastPositiveFlowTime = System.currentTimeMillis()
                             if (isInAutoMode && !autoModeSprayDetected) {
                                 autoModeSprayDetected = true
+                                // Clear mission-end flag when new spray activity is detected
+                                // (handles mission restart or new mission without mode change)
+                                if (missionEndPhaseActive) {
+                                    LogUtils.i("TankEmpty", "🔄 Flow detected in AUTO mode — clearing missionEndPhaseActive (new spray pass)")
+                                    missionEndPhaseActive = false
+                                }
                             }
                         }
 
@@ -741,13 +773,28 @@ class MavlinkTelemetryRepository(
                             mode.equals("Auto_RTL", ignoreCase = true)
                         } ?: false
 
+                        // ═══ LAYER 2: Real-time mission-end detection via stored mission items ═══
+                        // Check if current waypoint corresponds to a mission-end command
+                        // (DO_SPRAYER(0), NAV_LOITER_UNLIM, NAV_RTL, NAV_LAND).
+                        // This fires INSIDE the BATT2 handler on every telemetry tick, so it
+                        // catches mission-end even if MISSION_CURRENT was delayed by telemetry congestion.
+                        if (isInAutoMode && autoModeSprayDetected && !missionEndPhaseActive) {
+                            val currentWaypoint = state.value.currentWaypoint
+                            if (currentWaypoint != null && sharedViewModel.isMissionEndSequence(currentWaypoint)) {
+                                LogUtils.i("TankEmpty", "🛑 Mission-end detected in BATT2 handler (waypoint=$currentWaypoint is end-of-mission command) — resetting spray detection")
+                                missionEndPhaseActive = true
+                                resetAutoModeSprayDetection()
+                            }
+                        }
+
                         // In AUTO mode, spraying is done via mission commands (DO_SET_SERVO/DO_SPRAYER),
                         // NOT via RC7. So we also check autoModeSprayDetected to know spray is active.
-                        val sprayerIsOn = (currentSprayEnabledForEmpty || (isInAutoMode && autoModeSprayDetected)) && !isInNonSprayMode
+                        // Also skip if missionEndPhaseActive — the mission has intentionally stopped spraying.
+                        val sprayerIsOn = (currentSprayEnabledForEmpty || (isInAutoMode && autoModeSprayDetected)) && !isInNonSprayMode && !missionEndPhaseActive
 
                         // ═══ TANK EMPTY DEBUG LOGS ═══
                         LogUtils.d("TankEmpty", "━━━ Tank Empty Check ━━━ mode=$currentMode | flowRate=$flowRateLiterPerMin L/min | flowIsZero=$flowIsZero | configValid=$configValid")
-                        LogUtils.d("TankEmpty", "  sprayEnabled=$currentSprayEnabledForEmpty | autoSprayDetected=$autoModeSprayDetected | isAutoMode=$isInAutoMode | isInNonSprayMode=$isInNonSprayMode | sprayerIsOn=$sprayerIsOn")
+                        LogUtils.d("TankEmpty", "  sprayEnabled=$currentSprayEnabledForEmpty | autoSprayDetected=$autoModeSprayDetected | isAutoMode=$isInAutoMode | isInNonSprayMode=$isInNonSprayMode | missionEnd=$missionEndPhaseActive | sprayerIsOn=$sprayerIsOn")
                         LogUtils.d("TankEmpty", "  pumpTurnedOnTime=$pumpTurnedOnTime | zeroFlowStartTime=$zeroFlowStartTime | tankEmptyShown=$tankEmptyNotificationShown")
 
                         if (sprayerIsOn && configValid) {
@@ -807,9 +854,10 @@ class MavlinkTelemetryRepository(
                         }
 
                         // Reset AUTO mode spray detection when leaving AUTO mode
-                        if (!isInAutoMode && autoModeSprayDetected) {
+                        if (!isInAutoMode && (autoModeSprayDetected || missionEndPhaseActive)) {
                             autoModeSprayDetected = false
                             lastPositiveFlowTime = null
+                            missionEndPhaseActive = false
                         }
                     }
                     // Level sensor (BATT3 - id=2)
@@ -1360,14 +1408,20 @@ class MavlinkTelemetryRepository(
                     // Update SharedViewModel
                     sharedViewModel.updateCurrentWaypoint(currentSeq)
 
-                    // ═══ FIX: Reset spray detection when last waypoints reached ═══
-                    // When MISSION_CURRENT advances to the final mission items (DO_SPRAYER(0) + RTL/LAND),
+                    // ═══ FIX: Reset spray detection when mission-end items reached ═══
+                    // When MISSION_CURRENT advances to the final mission items (DO_SPRAYER(0) + RTL/LAND/LOITER),
                     // the sprayer is already off. Reset autoModeSprayDetected to prevent false
-                    // "Tank Empty" alerts while still in AUTO mode during RTL/landing.
+                    // "Tank Empty" alerts while still in AUTO mode during RTL/landing/hovering.
+                    // Two independent checks for robustness:
+                    //   1. Count-based: currentSeq >= totalMissionItems - 3 (fails if lastUploadedCount is 0)
+                    //   2. Command-type: look up current item in stored mission items (fails if items not stored)
                     val totalMissionItems = sharedViewModel.lastUploadedCount
-                    if (totalMissionItems > 0 && currentSeq >= totalMissionItems - 3) {
-                        if (autoModeSprayDetected) {
-                            LogUtils.i("SprayControl", "🛑 Resetting auto spray detection - mission near end (currentSeq=$currentSeq, total=$totalMissionItems)")
+                    val isNearEnd = totalMissionItems > 0 && currentSeq >= totalMissionItems - 3
+                    val isEndCommand = sharedViewModel.isMissionEndSequence(currentSeq)
+                    if (isNearEnd || isEndCommand) {
+                        if (autoModeSprayDetected || !missionEndPhaseActive) {
+                            LogUtils.i("SprayControl", "🛑 Resetting auto spray detection - mission near end (currentSeq=$currentSeq, total=$totalMissionItems, isNearEnd=$isNearEnd, isEndCommand=$isEndCommand)")
+                            missionEndPhaseActive = true
                             resetAutoModeSprayDetection()
                         }
                     }
@@ -1406,18 +1460,22 @@ class MavlinkTelemetryRepository(
                     // Update SharedViewModel
                     sharedViewModel.updateCurrentWaypoint(reachedSeq)
 
-                    // ═══ FIX: Reset spray detection when last waypoints reached ═══
-                    // When the drone reaches the final mission items (DO_SPRAYER(0) + RTL/LAND),
+                    // ═══ FIX: Reset spray detection when mission-end items reached ═══
+                    // When the drone reaches the final mission items (DO_SPRAYER(0) + RTL/LAND/LOITER),
                     // the sprayer is already off but autoModeSprayDetected is still true.
                     // This causes a false "Tank Empty" alert because:
                     //   sprayCommandActive = isInAutoMode && autoModeSprayDetected = true
                     //   flow = 0 (sprayer was turned off by mission) → triggers tank empty after 3s
-                    // Fix: Reset spray detection when we reach the last 3 items of the mission
-                    // (accounts for final DO_SPRAYER(0) + completion action like RTL/LAND/LOITER)
+                    // Fix: Reset spray detection via dual check:
+                    //   1. Count-based: seq near end of mission (fails if lastUploadedCount is 0)
+                    //   2. Command-type: item at seq is a terminal command (fails if items not stored)
                     val totalMissionItems = sharedViewModel.lastUploadedCount
-                    if (totalMissionItems > 0 && reachedSeq >= totalMissionItems - 3) {
-                        if (autoModeSprayDetected) {
-                            LogUtils.i("SprayControl", "🛑 Resetting auto spray detection - last waypoint reached (seq=$reachedSeq, total=$totalMissionItems)")
+                    val isNearEnd = totalMissionItems > 0 && reachedSeq >= totalMissionItems - 3
+                    val isEndCommand = sharedViewModel.isMissionEndSequence(reachedSeq)
+                    if (isNearEnd || isEndCommand) {
+                        if (autoModeSprayDetected || !missionEndPhaseActive) {
+                            LogUtils.i("SprayControl", "🛑 Resetting auto spray detection - last waypoint reached (seq=$reachedSeq, total=$totalMissionItems, isNearEnd=$isNearEnd, isEndCommand=$isEndCommand)")
+                            missionEndPhaseActive = true
                             resetAutoModeSprayDetection()
                         }
                     }

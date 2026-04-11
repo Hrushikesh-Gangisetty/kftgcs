@@ -1197,7 +1197,7 @@ fun GcsMap(
                 if (points.size > 1) {
                     Polyline(
                         points = points,
-                        width = 6f,
+                        width = 15f,
                         color = if (isSpraying) Color.Green else Color.Red
                     )
                 }
