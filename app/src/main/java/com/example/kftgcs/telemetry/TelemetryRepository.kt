@@ -152,8 +152,10 @@ class MavlinkTelemetryRepository(
     // Zero flow detection for tank empty (when sprayer is ON but flow is 0)
     private var zeroFlowStartTime: Long? = null
     private var pumpTurnedOnTime: Long? = null  // Track when pump was turned ON for initial delay
-    private val ZERO_FLOW_THRESHOLD_MS = 2000L // 2 seconds of zero flow = tank empty
-    private val PUMP_STARTUP_DELAY_MS = 2000L  // 2 second delay after pump turns ON before checking flow
+    private val ZERO_FLOW_THRESHOLD_MS = 5000L // 5 seconds of confirmed zero flow = tank empty
+    private val PUMP_STARTUP_DELAY_MS = 3000L  // 3 second delay after pump turns ON before checking flow
+    // NOTE: Total worst-case time from pump ON to tank empty trigger = 8 seconds
+    // This ensures pumps have sufficient time to prime and flow sensor stabilises
 
     // AUTO mode spray tracking
     // In AUTO mode, sprayer is controlled by DO_SET_SERVO, DO_SPRAYER, or ArduPilot Sprayer library
@@ -747,19 +749,30 @@ class MavlinkTelemetryRepository(
                         // ╠══════════════════════════════════════════════════════════════════╣
                         // ║ Tank is considered empty when:                                   ║
                         // ║   1. Sprayer is ON (RC7 enabled, sprayEnabled = true)             ║
-                        // ║   2. Flow rate is 0 for 3+ seconds                               ║
-                        // ║   3. BATT2 is properly configured                                ║
-                        // ║   4. NOT in a non-spray mode (BRAKE/RTL/LAND/Smart_RTL)          ║
+                        // ║   2. Flow was previously positive (pump was actually running)     ║
+                        // ║   3. Flow rate drops to CONFIRMED 0 for 5+ seconds               ║
+                        // ║      (null = no data yet, NOT treated as zero)                    ║
+                        // ║   4. BATT2 is properly configured                                ║
+                        // ║   5. NOT in a non-spray mode (BRAKE/RTL/LAND/Smart_RTL)          ║
                         // ║                                                                  ║
                         // ║ Timings:                                                         ║
-                        // ║   PUMP_STARTUP_DELAY_MS = 2000ms (grace period after pump ON)    ║
-                        // ║   ZERO_FLOW_THRESHOLD_MS = 3000ms (zero flow to declare empty)   ║
-                        // ║   Total worst-case = ~5 seconds from pump ON with empty tank     ║
+                        // ║   PUMP_STARTUP_DELAY_MS = 3000ms (grace period after pump ON)    ║
+                        // ║   ZERO_FLOW_THRESHOLD_MS = 5000ms (zero flow to declare empty)   ║
+                        // ║   Total worst-case = ~8 seconds from pump ON with empty tank     ║
+                        // ║                                                                  ║
+                        // ║ Key safety guard:                                                ║
+                        // ║   Tank empty ONLY triggers if lastPositiveFlowTime != null,      ║
+                        // ║   meaning flow > 0 was actually observed at least once.           ║
+                        // ║   This prevents false positives when RC7 is ON but pump hasn't   ║
+                        // ║   started or pilot is just transiting (not spraying).             ║
                         // ╚══════════════════════════════════════════════════════════════════╝
 
                         val currentSprayEnabledForEmpty = state.value.sprayTelemetry.sprayEnabled
                         val configValid = state.value.sprayTelemetry.configurationValid
-                        val flowIsZero = flowRateLiterPerMin == null || flowRateLiterPerMin == 0f
+                        // IMPORTANT: null = no BATT2 data received yet, NOT zero flow.
+                        // Only treat confirmed 0f from the sensor as zero flow.
+                        // This prevents false tank-empty triggers before the sensor has reported.
+                        val flowIsZero = flowRateLiterPerMin != null && flowRateLiterPerMin == 0f
 
                         // ═══ Skip tank empty detection in non-spray modes ═══
                         // When failsafes (battery, geofence, RC) trigger a mode change to
@@ -795,7 +808,7 @@ class MavlinkTelemetryRepository(
                         // ═══ TANK EMPTY DEBUG LOGS ═══
                         LogUtils.d("TankEmpty", "━━━ Tank Empty Check ━━━ mode=$currentMode | flowRate=$flowRateLiterPerMin L/min | flowIsZero=$flowIsZero | configValid=$configValid")
                         LogUtils.d("TankEmpty", "  sprayEnabled=$currentSprayEnabledForEmpty | autoSprayDetected=$autoModeSprayDetected | isAutoMode=$isInAutoMode | isInNonSprayMode=$isInNonSprayMode | missionEnd=$missionEndPhaseActive | sprayerIsOn=$sprayerIsOn")
-                        LogUtils.d("TankEmpty", "  pumpTurnedOnTime=$pumpTurnedOnTime | zeroFlowStartTime=$zeroFlowStartTime | tankEmptyShown=$tankEmptyNotificationShown")
+                        LogUtils.d("TankEmpty", "  pumpTurnedOnTime=$pumpTurnedOnTime | zeroFlowStartTime=$zeroFlowStartTime | tankEmptyShown=$tankEmptyNotificationShown | lastPositiveFlow=$lastPositiveFlowTime")
 
                         if (sprayerIsOn && configValid) {
                             // Track when sprayer was turned ON
@@ -807,8 +820,14 @@ class MavlinkTelemetryRepository(
                             val timeSincePumpOn = System.currentTimeMillis() - (pumpTurnedOnTime ?: 0L)
                             LogUtils.d("TankEmpty", "  timeSincePumpOn=${timeSincePumpOn}ms | startupDelay=${PUMP_STARTUP_DELAY_MS}ms | zeroFlowThreshold=${ZERO_FLOW_THRESHOLD_MS}ms")
 
-                            // Only check for zero flow after pump startup delay
-                            if (timeSincePumpOn >= PUMP_STARTUP_DELAY_MS && flowIsZero) {
+                            // Only check for zero flow after pump startup delay AND
+                            // only if we have previously seen positive flow (lastPositiveFlowTime != null).
+                            // This prevents false "Tank Empty" when:
+                            //   - Pilot has RC7 ON but hasn't started spraying yet
+                            //   - Pilot is transiting in Loiter/Stabilize with RC7 ON
+                            //   - Pump is priming and hasn't produced flow yet
+                            // A genuine tank-empty scenario requires: flow was positive → flow dropped to 0.
+                            if (timeSincePumpOn >= PUMP_STARTUP_DELAY_MS && flowIsZero && lastPositiveFlowTime != null) {
                                 if (zeroFlowStartTime == null) {
                                     zeroFlowStartTime = System.currentTimeMillis()
                                     LogUtils.w("TankEmpty", "⏱️ Zero flow detected after startup delay - starting ${ZERO_FLOW_THRESHOLD_MS}ms zero-flow timer")

@@ -82,10 +82,9 @@ class SharedViewModel : ViewModel() {
     // Battery failsafe tracking
     private var lastVoltageAlertLevel1Time = 0L
     private var lastVoltageAlertLevel2Time = 0L  // Track last Level 2 alert time for repeated warnings
-    private var voltageAlertLevel2Triggered = false
-    private var lastLevel2ModeAtTrigger: String? = null  // Track mode when Level 2 was triggered
-    private val VOLTAGE_ALERT_INTERVAL_MS = 3000L // Alert every 5 seconds for Level 1
-    private val VOLTAGE_CRITICAL_INTERVAL_MS = 5000L // Re-alert every 10 seconds for Level 2 if still critical
+    private var voltageAlertLevel2Triggered = false  // Once true, action won't fire again until disarm→arm
+    private val VOLTAGE_ALERT_INTERVAL_MS = 3000L // Alert every 3 seconds for Level 1
+    private val VOLTAGE_CRITICAL_INTERVAL_MS = 5000L // Re-alert every 5 seconds for Level 2 if still critical
 
     init {
         // Setup emergency RTL callback for crash handler
@@ -120,11 +119,10 @@ class SharedViewModel : ViewModel() {
                 if (state.connected && state.armed && state.voltage != null) {
                     handleBatteryVoltageFailsafe(state.voltage)
                 } else if (!state.armed) {
-                    // Reset tracking when disarmed
+                    // Reset tracking when disarmed — allows failsafe to fire again on next arm
                     voltageAlertLevel2Triggered = false
                     lastVoltageAlertLevel1Time = 0L
                     lastVoltageAlertLevel2Time = 0L
-                    lastLevel2ModeAtTrigger = null
                 }
             }
         }
@@ -132,8 +130,14 @@ class SharedViewModel : ViewModel() {
 
     /**
      * Handle battery voltage failsafe monitoring.
-     * Level 1: Alert only (TTS + notification every 5 seconds)
-     * Level 2: Action (BRAKE/RTL/LAND) + TTS, repeated alerts every 10 seconds if still critical
+     * Level 1: Alert only (TTS + notification every 3 seconds)
+     * Level 2: Action (BRAKE/RTL/LAND) fires ONCE per arm cycle + TTS repeats every 5 seconds
+     *
+     * IMPORTANT: The Level 2 mode-change action is ONE-SHOT per arm cycle.
+     * Once triggered, it will NOT re-trigger even if the pilot overrides the mode.
+     * This prevents the annoying loop where pilot switches mode and failsafe fights back.
+     * The action flag (voltageAlertLevel2Triggered) only resets on disarm.
+     * TTS warnings continue so the pilot stays aware of the critical battery state.
      */
     private fun handleBatteryVoltageFailsafe(voltage: Float) {
         val context = GCSApplication.getInstance() ?: return
@@ -141,28 +145,18 @@ class SharedViewModel : ViewModel() {
         val level1Threshold = getLowVoltLevel1(context)
         val level2Threshold = getLowVoltLevel2(context)
         val level2Action = getLowVoltLevel2Action(context)
-        val currentMode = _telemetryState.value.mode
 
         val now = System.currentTimeMillis()
 
         // Level 2 (critical) - takes priority
         if (voltage <= level2Threshold) {
-            // Check if we should trigger/re-trigger the action:
-            // 1. Never triggered before (!voltageAlertLevel2Triggered)
-            // 2. Mode changed since last trigger (pilot overrode, so try again)
-            // 3. Enough time passed for a repeat alert
-            val shouldTriggerAction = !voltageAlertLevel2Triggered || 
-                (lastLevel2ModeAtTrigger != null && currentMode != lastLevel2ModeAtTrigger)
-            
-            val shouldAlert = !voltageAlertLevel2Triggered || 
-                (now - lastVoltageAlertLevel2Time >= VOLTAGE_CRITICAL_INTERVAL_MS)
 
-            if (shouldTriggerAction) {
+            if (!voltageAlertLevel2Triggered) {
+                // ═══ FIRST TRIGGER: Execute mode change action (one-shot per arm cycle) ═══
                 voltageAlertLevel2Triggered = true
                 lastVoltageAlertLevel2Time = now
-                lastLevel2ModeAtTrigger = currentMode
-                
-                LogUtils.i("BatteryFailsafe", "⚠️ CRITICAL: Battery voltage ${voltage}V <= ${level2Threshold}V - Triggering $level2Action")
+
+                LogUtils.i("BatteryFailsafe", "⚠️ CRITICAL: Battery voltage ${voltage}V <= ${level2Threshold}V - Triggering $level2Action (one-shot)")
 
                 // TTS alert
                 ttsManager?.speak("Critical! Battery voltage ${String.format(Locale.US, "%.1f", voltage)} volts. Activating $level2Action mode.")
@@ -220,14 +214,15 @@ class SharedViewModel : ViewModel() {
                         LogUtils.e("BatteryFailsafe", "Failed to send battery critical event", e)
                     }
                 }
-            } else if (shouldAlert) {
-                // Just repeat the TTS warning without re-triggering mode change
+            } else if (now - lastVoltageAlertLevel2Time >= VOLTAGE_CRITICAL_INTERVAL_MS) {
+                // ═══ REPEAT: TTS warning only, NO mode change ═══
+                // Action already fired this arm cycle. Just remind the pilot.
                 lastVoltageAlertLevel2Time = now
-                LogUtils.i("BatteryFailsafe", "⚠️ CRITICAL (repeat): Battery voltage ${voltage}V still below ${level2Threshold}V")
+                LogUtils.i("BatteryFailsafe", "⚠️ CRITICAL (repeat alert): Battery voltage ${voltage}V still below ${level2Threshold}V (action already taken this arm cycle)")
                 ttsManager?.speak("Critical! Battery voltage ${String.format(Locale.US, "%.1f", voltage)} volts.")
             }
         }
-        // Level 1 (warning) - alert only, every 5 seconds
+        // Level 1 (warning) - alert only, every 3 seconds
         else if (voltage <= level1Threshold && voltage > level2Threshold) {
             if (now - lastVoltageAlertLevel1Time >= VOLTAGE_ALERT_INTERVAL_MS) {
                 lastVoltageAlertLevel1Time = now
@@ -245,15 +240,8 @@ class SharedViewModel : ViewModel() {
                 )
             }
         }
-        // Voltage recovered above level 2 - reset trigger
-        else if (voltage > level2Threshold + 0.5f) {
-            // Only reset if voltage is well above threshold to avoid oscillation
-            if (voltageAlertLevel2Triggered) {
-                LogUtils.i("BatteryFailsafe", "Battery voltage recovered: ${voltage}V")
-                voltageAlertLevel2Triggered = false
-                lastLevel2ModeAtTrigger = null
-            }
-        }
+        // NOTE: No voltage recovery reset here. voltageAlertLevel2Triggered only resets on DISARM.
+        // This ensures the failsafe action is truly one-shot per arm cycle.
     }
 
     /**
