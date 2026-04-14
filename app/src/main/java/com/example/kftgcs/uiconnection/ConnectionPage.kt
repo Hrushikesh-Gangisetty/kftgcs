@@ -38,7 +38,14 @@ import kotlinx.coroutines.launch
 
 @SuppressLint("MissingPermission")
 @Composable
-fun ConnectionPage(navController: NavController, viewModel: SharedViewModel) {
+fun ConnectionPage(
+    navController: NavController,
+    viewModel: SharedViewModel,
+    /** Where to navigate after a successful connection. Defaults to SelectMethod. */
+    destinationRoute: String = Screen.SelectMethod.route,
+    /** Route to pop up to (inclusive) when navigating away. Defaults to Connection. */
+    popUpToRoute: String = Screen.Connection.route
+) {
     var isConnecting by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf("") }
     val coroutineScope = rememberCoroutineScope()
@@ -58,8 +65,8 @@ fun ConnectionPage(navController: NavController, viewModel: SharedViewModel) {
             if (isConnected) {
                 isConnecting = false
                 connectionJob?.cancel()
-                navController.navigate(Screen.SelectMethod.route) {
-                    popUpTo(Screen.Connection.route) { inclusive = true }
+                navController.navigate(destinationRoute) {
+                    popUpTo(popUpToRoute) { inclusive = true }
                 }
             }
         }

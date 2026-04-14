@@ -7,12 +7,16 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
@@ -71,6 +75,25 @@ fun LoginPage(modifier: Modifier = Modifier, navController: NavController, authV
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize()
         )
+        // Param Management icon button — top right corner
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = 20.dp, end = 20.dp)
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(Color(0xFF1565C0))
+                .clickable { navController.navigate(Screen.ParamLogin.route) },
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Tune,
+                contentDescription = "Param Management",
+                tint = Color.White,
+                modifier = Modifier.size(22.dp)
+            )
+        }
+
         Column(
             modifier = Modifier
                 .fillMaxSize()

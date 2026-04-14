@@ -198,7 +198,8 @@ class MavlinkTelemetryRepository(
     val rcChannels: SharedFlow<RcChannels> = _rcChannels.asSharedFlow()
 
     // PARAM_VALUE flow for parameter reading
-    private val _paramValue = MutableSharedFlow<ParamValue>(replay = 0, extraBufferCapacity = 10)
+    // Buffer capacity set high to handle PARAM_REQUEST_LIST bulk responses (hundreds of params)
+    private val _paramValue = MutableSharedFlow<ParamValue>(replay = 0, extraBufferCapacity = 1024)
     val paramValue: SharedFlow<ParamValue> = _paramValue.asSharedFlow()
 
     // ════════════════════════════════════════════════════════════════

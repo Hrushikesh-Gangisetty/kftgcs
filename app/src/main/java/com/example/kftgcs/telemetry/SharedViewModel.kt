@@ -1074,6 +1074,31 @@ class SharedViewModel : ViewModel() {
     }
 
     /**
+     * Request ALL parameters from the autopilot using PARAM_REQUEST_LIST (MAVLink #21).
+     * After this request, the autopilot will emit all parameters as PARAM_VALUE messages
+     * via the paramValue SharedFlow. 
+     * See: https://mavlink.io/en/services/parameter.html
+     */
+    suspend fun requestAllParameters() {
+        repo?.let { repository ->
+            try {
+                val paramRequestList = com.divpundir.mavlink.definitions.common.ParamRequestList(
+                    targetSystem = repository.fcuSystemId,
+                    targetComponent = repository.fcuComponentId
+                )
+                repository.connection.trySendUnsignedV2(
+                    repository.gcsSystemId,
+                    repository.gcsComponentId,
+                    paramRequestList
+                )
+                LogUtils.d("FullParamList", "📤 Sent PARAM_REQUEST_LIST")
+            } catch (e: Exception) {
+                LogUtils.e("FullParamList", "Failed to send PARAM_REQUEST_LIST", e)
+            }
+        }
+    }
+
+    /**
      * Request a parameter value from the autopilot by name.
      * The response will come via the paramValue flow.
      */
@@ -1184,9 +1209,10 @@ class SharedViewModel : ViewModel() {
                 )
 
                 // Wait for PARAM_VALUE response confirming the set
+                // Note: paramId from drone may contain null-terminator chars, so we must clean before comparing
                 return withTimeoutOrNull(timeoutMs) {
                     paramValue
-                        .filter { it.paramId == paramId }
+                        .filter { it.paramId.trim().replace("\u0000", "") == paramId }
                         .first()
                 }
             } catch (e: Exception) {

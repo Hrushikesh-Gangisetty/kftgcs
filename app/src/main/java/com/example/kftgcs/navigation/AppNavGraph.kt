@@ -51,6 +51,14 @@ import com.example.kftgcs.ui.LanguageSelectionPage
 import com.example.kftgcs.uiflyingmethod.SelectFlyingMethodScreen
 import com.example.kftgcs.viewmodel.MissionTemplateViewModel
 import com.example.kftgcs.viewmodel.TlogViewModel
+import com.example.kftgcs.parammanagement.ParamManagementViewModel
+import com.example.kftgcs.parammanagement.ParamLoginPage
+import com.example.kftgcs.parammanagement.ParamManagementHomeScreen
+import com.example.kftgcs.parammanagement.AboutDroneScreen
+import com.example.kftgcs.parammanagement.AboutDroneViewModel
+import com.example.kftgcs.parammanagement.FullParamListScreen
+import com.example.kftgcs.parammanagement.FullParamListViewModel
+import com.example.kftgcs.parammanagement.BreakingSettingsScreen
 
 sealed class Screen(val route: String) {
     object Welcome : Screen("welcome")
@@ -83,6 +91,13 @@ sealed class Screen(val route: String) {
     object Security : Screen("security")
     object TermsAndConditions : Screen("terms_and_conditions")
     object Options : Screen("options")
+    // Param Management
+    object ParamLogin : Screen("param_login")
+    object ParamConnection : Screen("param_connection")
+    object ParamManagementHome : Screen("param_management_home")
+    object ParamAboutDrone : Screen("param_about_drone")
+    object ParamFullParamList : Screen("param_full_param_list")
+    object ParamBreakingSettings : Screen("param_breaking_settings")
 }
 
 @Composable
@@ -95,6 +110,9 @@ fun AppNavGraph(navController: NavHostController) {
 
     // Create AuthViewModel at the top level
     val authViewModel: AuthViewModel = viewModel()
+
+    // Create ParamManagementViewModel at the top level so state is preserved across routes
+    val paramManagementViewModel: ParamManagementViewModel = viewModel()
 
     // Check authentication status on app start
     LaunchedEffect(Unit) {
@@ -365,6 +383,51 @@ fun AppNavGraph(navController: NavHostController) {
         composable(Screen.SpraySystemTest.route) {
             // TODO: Implement Spray System Test Screen
             PlaceholderScreen("Spray System Test", "Spray system test configuration coming soon!")
+        }
+
+        // ── Param Management ──────────────────────────────────────────────────
+        composable(Screen.ParamLogin.route) {
+            ParamLoginPage(
+                navController = navController,
+                paramManagementViewModel = paramManagementViewModel
+            )
+        }
+
+        composable(Screen.ParamConnection.route) {
+            // Reuse the existing ConnectionPage but route to ParamManagementHome on success
+            ConnectionPage(
+                navController = navController,
+                viewModel = sharedViewModel,
+                destinationRoute = Screen.ParamManagementHome.route,
+                popUpToRoute = Screen.ParamConnection.route
+            )
+        }
+
+        composable(Screen.ParamManagementHome.route) {
+            ParamManagementHomeScreen(
+                navController = navController,
+                paramManagementViewModel = paramManagementViewModel
+            )
+        }
+
+        composable(Screen.ParamAboutDrone.route) {
+            val aboutDroneViewModel: AboutDroneViewModel = viewModel { AboutDroneViewModel(sharedViewModel) }
+            AboutDroneScreen(
+                navController = navController,
+                aboutDroneViewModel = aboutDroneViewModel
+            )
+        }
+
+        composable(Screen.ParamFullParamList.route) {
+            val fullParamListViewModel: FullParamListViewModel = viewModel { FullParamListViewModel(sharedViewModel, application) }
+            FullParamListScreen(
+                navController = navController,
+                viewModel = fullParamListViewModel
+            )
+        }
+
+        composable(Screen.ParamBreakingSettings.route) {
+            BreakingSettingsScreen(navController = navController)
         }
     }
 }
