@@ -2589,6 +2589,124 @@ class SharedViewModel : ViewModel() {
     }
 
     /**
+     * Resume mission from a manually placed point on the map.
+     *
+     * Strategy: Find the mission segment (WPi → WPi+1) that the resume point lies closest to,
+     * then use WPi+1 (the END of that segment) as the resumeWaypointSeq so that the drone:
+     *   1. Flies to the EXACT placed lat/lng first (inserted by filterWaypointsForResume)
+     *   2. Continues with WPi+1 onwards — never backtracks to the segment start
+     *
+     * @param lat Latitude of the manually placed resume point
+     * @param lng Longitude of the manually placed resume point
+     * @param onProgress Callback for progress messages
+     * @param onResult Callback for final result (success, errorMessage)
+     */
+    fun resumeMissionFromManualPoint(
+        lat: Double,
+        lng: Double,
+        onProgress: (String) -> Unit = {},
+        onResult: (Boolean, String?) -> Unit = { _, _ -> }
+    ) {
+        viewModelScope.launch {
+            try {
+                onProgress("Step 1/6: Pre-flight checks...")
+                if (!_telemetryState.value.connected) {
+                    onResult(false, "Not connected to flight controller")
+                    return@launch
+                }
+
+                onProgress("Step 2/6: Retrieving mission from flight controller...")
+                val allWaypoints = repo?.getAllWaypoints()
+                if (allWaypoints == null || allWaypoints.isEmpty()) {
+                    onResult(false, "Failed to retrieve mission from flight controller")
+                    return@launch
+                }
+                LogUtils.i("ManualResume", "Retrieved ${allWaypoints.size} waypoints from FC")
+
+                // Build an ordered list of NAV waypoints (have real lat/lng coords, seq > 0)
+                onProgress("Step 3/6: Locating resume segment in mission...")
+                val navWaypoints = allWaypoints
+                    .filter { it.seq.toInt() > 0 && it.x != 0 && it.y != 0 }
+                    .sortedBy { it.seq.toInt() }
+
+                // Find which segment (navWaypoints[i] → navWaypoints[i+1]) is closest to the
+                // dropped pin. Use the perpendicular distance from point to line segment.
+                // The segment END (navWaypoints[i+1]) becomes the resumeWaypointSeq so the
+                // drone flies: exact resume point → segment end → rest of mission (no backtrack).
+                val resumeWaypointSeq: Int
+                if (navWaypoints.size >= 2) {
+                    var bestSegEndSeq = navWaypoints.last().seq.toInt()
+                    var bestDist = Double.MAX_VALUE
+
+                    for (i in 0 until navWaypoints.size - 1) {
+                        val aLat = navWaypoints[i].x / 1e7
+                        val aLng = navWaypoints[i].y / 1e7
+                        val bLat = navWaypoints[i + 1].x / 1e7
+                        val bLng = navWaypoints[i + 1].y / 1e7
+
+                        val dist = pointToSegmentDistanceSq(lat, lng, aLat, aLng, bLat, bLng)
+                        if (dist < bestDist) {
+                            bestDist = dist
+                            bestSegEndSeq = navWaypoints[i + 1].seq.toInt()
+                        }
+                    }
+                    resumeWaypointSeq = bestSegEndSeq
+                } else {
+                    resumeWaypointSeq = navWaypoints.firstOrNull()?.seq?.toInt() ?: 1
+                }
+
+                LogUtils.i("ManualResume", "Resume segment end seq=$resumeWaypointSeq → drone will fly to exact point then continue from WP$resumeWaypointSeq")
+
+                onProgress("Step 4/6: Filtering waypoints for resume...")
+                val filtered = repo?.filterWaypointsForResume(
+                    allWaypoints,
+                    resumeWaypointSeq,
+                    resumeLatitude = lat,
+                    resumeLongitude = lng,
+                    restoreSpray = _sprayWasActiveBeforePause
+                )
+                if (filtered == null || filtered.isEmpty()) {
+                    onResult(false, "Mission filtering failed - no waypoints to resume")
+                    return@launch
+                }
+
+                val resequenced = repo?.resequenceWaypoints(filtered)
+                if (resequenced == null || resequenced.isEmpty()) {
+                    onResult(false, "Mission resequencing failed")
+                    return@launch
+                }
+                LogUtils.i("ManualResume", "Resequenced to ${resequenced.size} waypoints")
+
+                onProgress("Step 5/6: Uploading modified mission to flight controller...")
+                val uploadSuccess = repo?.uploadMissionWithAck(resequenced) ?: false
+                if (!uploadSuccess) {
+                    LogUtils.e("ManualResume", "❌ Mission upload FAILED")
+                    onResult(false, "Mission upload failed - flight controller rejected mission")
+                    return@launch
+                }
+                LogUtils.i("ManualResume", "✅ Manual resume mission uploaded to FC")
+
+                delay(500)
+                repo?.setCurrentWaypoint(1)
+
+                _resumeMissionReady.value = true
+                _missionUploaded.value = true
+                lastUploadedCount = resequenced.size
+                lastUploadedMissionItems = resequenced.toList()
+
+                onProgress("Step 6/6: Done!")
+                addNotification(Notification("Resume point set — mission ready to resume", NotificationType.SUCCESS))
+                LogUtils.i("ManualResume", "✅ Manual resume mission ready")
+                onResult(true, null)
+
+            } catch (e: Exception) {
+                LogUtils.e("ManualResume", "Failed to process manual resume point", e)
+                onResult(false, e.message)
+            }
+        }
+    }
+
+    /**
      * Called when user dismisses the "Add Resume Here" popup without confirming
      */
     fun dismissAddResumeHerePopup() {
@@ -4767,5 +4885,38 @@ class SharedViewModel : ViewModel() {
         stopFenceStatusMonitoring()
         ttsManager?.shutdown()
         LogUtils.d("SharedVM", "ViewModel cleared, TTS shutdown")
+    }
+
+    /**
+     * Returns the squared minimum distance from point P=(pLat,pLng) to the segment A→B.
+     * Uses simple flat-earth approximation (adequate for short drone mission segments).
+     * Squared distance avoids sqrt — only used for comparison so absolute value doesn't matter.
+     */
+    private fun pointToSegmentDistanceSq(
+        pLat: Double, pLng: Double,
+        aLat: Double, aLng: Double,
+        bLat: Double, bLng: Double
+    ): Double {
+        val abLat = bLat - aLat
+        val abLng = bLng - aLng
+        val abLenSq = abLat * abLat + abLng * abLng
+
+        if (abLenSq == 0.0) {
+            // Segment is a point — return distance to that point
+            val dlat = pLat - aLat
+            val dlng = pLng - aLng
+            return dlat * dlat + dlng * dlng
+        }
+
+        // Project P onto AB, clamped to [0,1]
+        val t = ((pLat - aLat) * abLat + (pLng - aLng) * abLng) / abLenSq
+        val tClamped = t.coerceIn(0.0, 1.0)
+
+        val closestLat = aLat + tClamped * abLat
+        val closestLng = aLng + tClamped * abLng
+
+        val dlat = pLat - closestLat
+        val dlng = pLng - closestLng
+        return dlat * dlat + dlng * dlng
     }
 }

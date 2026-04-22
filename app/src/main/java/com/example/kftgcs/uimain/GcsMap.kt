@@ -199,6 +199,51 @@ private fun createSmallLabelMarker(text: String, backgroundColor: Int = android.
     return BitmapDescriptorFactory.fromBitmap(bitmap)
 }
 
+// Helper function to create small grey "R" marker for manual resume point (pending upload)
+private fun createSmallResumeMarkerGrey(): BitmapDescriptor {
+    val size = 60
+    val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+
+    val circlePaint = android.graphics.Paint().apply {
+        isAntiAlias = true
+        color = android.graphics.Color.rgb(158, 158, 158) // Material Grey 500
+        style = android.graphics.Paint.Style.FILL
+    }
+    canvas.drawCircle(size / 2f, size / 2f, size / 2f - 3, circlePaint)
+
+    val borderPaint = android.graphics.Paint().apply {
+        isAntiAlias = true
+        color = android.graphics.Color.WHITE
+        style = android.graphics.Paint.Style.STROKE
+        strokeWidth = 3f
+    }
+    canvas.drawCircle(size / 2f, size / 2f, size / 2f - 3, borderPaint)
+
+    val outlinePaint = android.graphics.Paint().apply {
+        isAntiAlias = true
+        color = android.graphics.Color.DKGRAY
+        style = android.graphics.Paint.Style.STROKE
+        strokeWidth = 1f
+    }
+    canvas.drawCircle(size / 2f, size / 2f, size / 2f - 1, outlinePaint)
+
+    val textPaint = android.graphics.Paint().apply {
+        isAntiAlias = true
+        color = android.graphics.Color.WHITE
+        textSize = 36f
+        typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+        textAlign = android.graphics.Paint.Align.CENTER
+    }
+    textPaint.setShadowLayer(1f, 1f, 1f, android.graphics.Color.BLACK)
+    val textBounds = android.graphics.Rect()
+    textPaint.getTextBounds("R", 0, 1, textBounds)
+    val textY = size / 2f + textBounds.height() / 2f - textBounds.bottom
+    canvas.drawText("R", size / 2f, textY, textPaint)
+
+    return BitmapDescriptorFactory.fromBitmap(bitmap)
+}
+
 // Helper function to create small green "R" marker for resume point
 private fun createSmallResumeMarker(): BitmapDescriptor {
     val size = 60 // Small round marker
@@ -393,7 +438,10 @@ fun GcsMap(
     resumePointLocation: LatLng? = null,
     // RC Mode - Phone GPS location for RC marker
     phoneLocation: LatLng? = null,
-    isRCMode: Boolean = false
+    isRCMode: Boolean = false,
+    // Manual resume point (grey = uploading, green = uploaded)
+    manualResumePointPending: LatLng? = null,
+    manualResumePointUploaded: LatLng? = null
 ) {
     val context = LocalContext.current
     val cameraState = cameraPositionState ?: rememberCameraPositionState()
@@ -450,6 +498,7 @@ fun GcsMap(
     val startMarker = remember { createMarkerWithText("S", android.graphics.Color.GREEN) }
     val endMarker = remember { createMarkerWithText("E", android.graphics.Color.RED) }
     val resumeMarker = remember { createSmallResumeMarker() }
+    val resumeMarkerGrey = remember { createSmallResumeMarkerGrey() }
     val rcMarker = remember { createRCMarker() }
 
     val lat = telemetryState.latitude
@@ -1213,6 +1262,30 @@ fun GcsMap(
                 snippet = "Drone paused here",
                 icon = resumeMarker,
                 anchor = Offset(0.5f, 0.5f)
+            )
+        }
+
+        // ===== MANUAL RESUME POINT MARKERS =====
+        // Grey "R" = user placed but upload still in progress
+        if (manualResumePointPending != null) {
+            Marker(
+                state = MarkerState(position = manualResumePointPending),
+                title = "Resume Point (uploading…)",
+                snippet = "Uploading modified mission",
+                icon = resumeMarkerGrey,
+                anchor = Offset(0.5f, 0.5f),
+                zIndex = 11f
+            )
+        }
+        // Green "R" = uploaded successfully
+        if (manualResumePointUploaded != null) {
+            Marker(
+                state = MarkerState(position = manualResumePointUploaded),
+                title = "Resume Point (ready)",
+                snippet = "Mission uploaded — ready to resume",
+                icon = resumeMarker,
+                anchor = Offset(0.5f, 0.5f),
+                zIndex = 11f
             )
         }
 

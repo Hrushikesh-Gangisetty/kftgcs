@@ -16,7 +16,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
-//import com.example.aerogcsclone.Telemetry.SharedViewModel
 import com.example.kftgcs.Telemetry.TelemetryState
 import com.example.kftgcs.authentication.AuthViewModel
 import com.google.maps.android.compose.MapType
@@ -132,6 +131,17 @@ fun MainPage(
     // Drone Camera Feed state
     var showCameraFeed by remember { mutableStateOf(false) }
 
+    // ===== ADD RESUME POINT FEATURE =====
+    val userSelectedFlightMode by telemetryViewModel.userSelectedFlightMode.collectAsState()
+    var isAddResumePointMode by remember { mutableStateOf(false) }
+    var showResumePointConfirmDialog by remember { mutableStateOf(false) }
+    var pendingManualResumeLatLng by remember { mutableStateOf<LatLng?>(null) }
+    var manualResumePointPending by remember { mutableStateOf<LatLng?>(null) }   // grey
+    var manualResumePointUploaded by remember { mutableStateOf<LatLng?>(null) } // green
+
+    val isAutoModeActive = userSelectedFlightMode == SharedViewModel.UserFlightMode.AUTOMATIC
+        && missionUploaded
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -174,7 +184,10 @@ fun MainPage(
                 // Obstacle zones for display (no editing on main page)
                 obstacles = obstacles,
                 // Resume point marker - shows "R" where drone paused
-                resumePointLocation = resumePointLocation
+                resumePointLocation = resumePointLocation,
+                // Manual resume point markers
+                manualResumePointPending = manualResumePointPending,
+                manualResumePointUploaded = manualResumePointUploaded
             )
 
             StatusPanel(
@@ -206,7 +219,12 @@ fun MainPage(
                 onCameraClick = {
                     showCameraFeed = !showCameraFeed
                 },
-                currentMode = telemetryState.mode
+                currentMode = telemetryState.mode,
+                showAddResumePointButton = isAutoModeActive,
+                isAddResumePointActive = isAddResumePointMode,
+                onAddResumePoint = {
+                    isAddResumePointMode = !isAddResumePointMode
+                }
             )
 
             if (isNotificationPanelVisible) {
@@ -247,6 +265,52 @@ fun MainPage(
             )
 
             // TopNavBar removed - it's already handled in AppNavGraph.kt
+
+            // ===== ADD RESUME POINT - CROSSHAIR OVERLAY =====
+            if (isAddResumePointMode) {
+                // Semi-transparent dim overlay to indicate placement mode
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .background(Color.Black.copy(alpha = 0.18f))
+                )
+                // Crosshair at map center — simple + symbol
+                Box(modifier = Modifier.align(Alignment.Center)) {
+                    Text(
+                        text = "+",
+                        color = Color.White,
+                        fontSize = 48.sp,
+                        fontWeight = FontWeight.Light,
+                        lineHeight = 48.sp
+                    )
+                }
+                // "Place Here" + Cancel buttons at bottom center
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 24.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Button(
+                        onClick = { isAddResumePointMode = false },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray)
+                    ) {
+                        Text("Cancel", color = Color.White)
+                    }
+                    Button(
+                        onClick = {
+                            pendingManualResumeLatLng = cameraPositionState.position.target
+                            showResumePointConfirmDialog = true
+                            isAddResumePointMode = false
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50))
+                    ) {
+                        Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Place Here", color = Color.White)
+                    }
+                }
+            }
         }
 
         // Mission Complete - NO POPUP, notification is sufficient
@@ -476,6 +540,96 @@ fun MainPage(
             )
         }
 
+        // === MANUAL ADD RESUME POINT CONFIRMATION DIALOG ===
+        if (showResumePointConfirmDialog && pendingManualResumeLatLng != null) {
+            val pointLat = pendingManualResumeLatLng!!.latitude
+            val pointLng = pendingManualResumeLatLng!!.longitude
+            AlertDialog(
+                onDismissRequest = {
+                    showResumePointConfirmDialog = false
+                    pendingManualResumeLatLng = null
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            showResumePointConfirmDialog = false
+                            val resumeLatLng = pendingManualResumeLatLng!!
+                            pendingManualResumeLatLng = null
+                            // Show grey marker immediately
+                            manualResumePointPending = resumeLatLng
+                            manualResumePointUploaded = null
+                            // Upload in background
+                            telemetryViewModel.resumeMissionFromManualPoint(
+                                lat = resumeLatLng.latitude,
+                                lng = resumeLatLng.longitude,
+                                onResult = { success, error ->
+                                    if (success) {
+                                        manualResumePointPending = null
+                                        manualResumePointUploaded = resumeLatLng
+                                        Toast.makeText(context, "Resume mission uploaded successfully!", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        manualResumePointPending = null
+                                        Toast.makeText(context, "Upload failed: ${error ?: "Unknown error"}", Toast.LENGTH_LONG).show()
+                                    }
+                                }
+                            )
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50))
+                    ) {
+                        Text("Yes, Resume From Here", color = Color.White)
+                    }
+                },
+                dismissButton = {
+                    Button(
+                        onClick = {
+                            showResumePointConfirmDialog = false
+                            pendingManualResumeLatLng = null
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+                    ) {
+                        Text(AppStrings.cancel, color = MaterialTheme.colorScheme.onSecondary)
+                    }
+                },
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Default.AddLocation,
+                            contentDescription = "Resume Point",
+                            tint = Color(0xFF4CAF50),
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            "Add Resume Point",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                },
+                text = {
+                    Column {
+                        Text(
+                            "Do you want the mission to resume from here?",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            "Lat: ${"%.6f".format(pointLat)}\nLng: ${"%.6f".format(pointLng)}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            "The modified mission will be uploaded to the flight controller in the background.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            )
+        }
+
         // === SET RESUME POINT POPUP ===
         // This dialog appears when mode changes from AUTO to LOITER or BRAKE during a mission
         if (showSetResumePointPopup) {
@@ -675,7 +829,10 @@ fun FloatingButtons(
     onToggleMapType: () -> Unit,
     onRefresh: () -> Unit,
     onCameraClick: () -> Unit = {},
-    currentMode: String?
+    currentMode: String?,
+    showAddResumePointButton: Boolean = false,
+    isAddResumePointActive: Boolean = false,
+    onAddResumePoint: () -> Unit = {}
 ) {
     Column(
         modifier = modifier,
@@ -758,6 +915,39 @@ fun FloatingButtons(
                     fontSize = 9.sp,
                     fontWeight = FontWeight.Medium
                 )
+            }
+        }
+
+        // Add Resume Point Button - only visible in Automatic mode when mission is uploaded
+        if (showAddResumePointButton) {
+            FloatingActionButton(
+                onClick = { onAddResumePoint() },
+                containerColor = if (isAddResumePointActive)
+                    Color(0xFF4CAF50).copy(alpha = 0.9f)   // green when active
+                else
+                    Color.Black.copy(alpha = 0.7f),
+                modifier = Modifier.size(width = 70.dp, height = 56.dp)
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        Icons.Default.AddLocation,
+                        contentDescription = "Add Resume Point",
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "Resume\nPoint",
+                        color = Color.White,
+                        fontSize = 8.sp,
+                        fontWeight = FontWeight.Medium,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 10.sp
+                    )
+                }
             }
         }
     }
