@@ -362,6 +362,8 @@ class SharedViewModel : ViewModel() {
         lastUploadedCount = 0
         lastUploadedMissionItems = emptyList()
         // Geofence is intentionally NOT cleared here
+        // Signal GcsMap to clear the local drone path trail
+        _clearDronePathTrigger.value++
     }
 
     /**
@@ -1608,6 +1610,10 @@ class SharedViewModel : ViewModel() {
     // Obstacle zones - list of polygons representing no-fly zones
     private val _obstacles = MutableStateFlow<List<List<LatLng>>>(emptyList())
     val obstacles: StateFlow<List<List<LatLng>>> = _obstacles.asStateFlow()
+
+    // Trigger to clear the drone's drawn flight path in GcsMap (incremented each time clear is requested)
+    private val _clearDronePathTrigger = MutableStateFlow(0)
+    val clearDronePathTrigger: StateFlow<Int> = _clearDronePathTrigger.asStateFlow()
 
     // Store home position for geofence calculation
     private val _homePosition = MutableStateFlow<LatLng?>(null)

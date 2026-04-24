@@ -441,7 +441,9 @@ fun GcsMap(
     isRCMode: Boolean = false,
     // Manual resume point (grey = uploading, green = uploaded)
     manualResumePointPending: LatLng? = null,
-    manualResumePointUploaded: LatLng? = null
+    manualResumePointUploaded: LatLng? = null,
+    // Trigger to clear the local drone path trail (increment to clear)
+    clearDronePathTrigger: Int = 0
 ) {
     val context = LocalContext.current
     val cameraState = cameraPositionState ?: rememberCameraPositionState()
@@ -481,6 +483,13 @@ fun GcsMap(
 
     // Track drone path with spray status
     val visitedPathPoints = remember { mutableStateListOf<DronePathPoint>() }
+
+    // Clear the drone path trail when clearDronePathTrigger is incremented
+    LaunchedEffect(clearDronePathTrigger) {
+        if (clearDronePathTrigger > 0) {
+            visitedPathPoints.clear()
+        }
+    }
 
     // Load quadcopter drawable with directional arrow indicator
     val droneIcon = remember {

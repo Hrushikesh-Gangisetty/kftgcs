@@ -63,6 +63,7 @@ fun MainPage(
     val geofenceEnabled by telemetryViewModel.geofenceEnabled.collectAsState()
     val geofencePolygon by telemetryViewModel.geofencePolygon.collectAsState()
     val obstacles by telemetryViewModel.obstacles.collectAsState()
+    val clearDronePathTrigger by telemetryViewModel.clearDronePathTrigger.collectAsState()
 
     // Selected geofence point tracking for adjustment
     var selectedGeofencePointIndex by remember { mutableStateOf<Int?>(null) }
@@ -188,7 +189,9 @@ fun MainPage(
                 resumePointLocation = resumePointLocation,
                 // Manual resume point markers
                 manualResumePointPending = manualResumePointPending,
-                manualResumePointUploaded = manualResumePointUploaded
+                manualResumePointUploaded = manualResumePointUploaded,
+                // Clear drone path trail trigger
+                clearDronePathTrigger = clearDronePathTrigger
             )
 
             StatusPanel(
