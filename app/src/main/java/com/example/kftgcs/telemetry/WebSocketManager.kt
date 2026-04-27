@@ -81,12 +81,20 @@ class WebSocketManager {
 
         // ── Connection URLs ──────────────────────────────────────────────────
 
+
+        // Local Server Configurations :
+
+//        private const val USE_SECURE_CONNECTION = false
+//        private const val PRODUCTION_WSS_URL    = "ws://10.0.2.2:8000/ws/telemetry/"
+//        private const val PRODUCTION_HOST       = "10.0.2.2:8000"
+
+        // AWS Server Configurations :
+        //Make sure these are used in release builds and the local configs are used in debug builds to avoid certificate pinning issues during development with self-signed certs.
+
         private const val USE_SECURE_CONNECTION = true
         private const val PRODUCTION_WSS_URL    = "wss://kftgcs.com/ws/telemetry/"
         private const val PRODUCTION_HOST       = "kftgcs.com"
-        // Replace with real SHA-256 pin before production release.
-        // openssl s_client -connect kftgcs.com:443 | openssl x509 -pubkey -noout |
-        //   openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | openssl enc -base64
+
         private const val CERTIFICATE_PIN       = "sha256/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 
         fun getWebSocketUrl(): String        = PRODUCTION_WSS_URL
