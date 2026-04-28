@@ -167,8 +167,16 @@ fun LoginPage(modifier: Modifier = Modifier, navController: NavController, authV
                                     Toast.LENGTH_SHORT
                                 ).show()
                             } else {
-                                Timber.d("LoginPage: Login button clicked - email: $email, password length: ${password.length}")
-                                authViewModel.login(context, email, password)
+                                // TODO: REMOVE BEFORE PRODUCTION — Dummy login bypass for testing (server down)
+                                if (email.trim() == "Kft.testing" && password == "12345678") {
+                                    Timber.d("LoginPage: Dummy login bypass triggered")
+                                    navController.navigate(Screen.LanguageSelection.route) {
+                                        popUpTo(Screen.Login.route) { inclusive = true }
+                                    }
+                                } else {
+                                    Timber.d("LoginPage: Login button clicked - email: $email, password length: ${password.length}")
+                                    authViewModel.login(context, email, password)
+                                }
                             }
                         },
                         modifier = Modifier.fillMaxWidth(),

@@ -63,6 +63,8 @@ import com.example.kftgcs.parammanagement.FlightModeScreen
 import com.example.kftgcs.parammanagement.FlightModeViewModel
 import com.example.kftgcs.parammanagement.ServoOutputScreen
 import com.example.kftgcs.parammanagement.SpraySettingsScreen
+import com.example.kftgcs.parammanagement.BatteryMonitorScreen
+import com.example.kftgcs.parammanagement.BatteryMonitorViewModel
 
 sealed class Screen(val route: String) {
     object Welcome : Screen("welcome")
@@ -95,6 +97,7 @@ sealed class Screen(val route: String) {
     object Security : Screen("security")
     object TermsAndConditions : Screen("terms_and_conditions")
     object Options : Screen("options")
+    object BatteryMonitorSettings : Screen("battery_monitor_settings")
     // Param Management
     object ParamLogin : Screen("param_login")
     object ParamConnection : Screen("param_connection")
@@ -312,6 +315,15 @@ fun AppNavGraph(navController: NavHostController) {
 
         composable(Screen.Options.route) {
             OptionsScreen(navController = navController, sharedViewModel = sharedViewModel)
+        }
+
+        composable(Screen.BatteryMonitorSettings.route) {
+            val batteryMonitorViewModel: BatteryMonitorViewModel =
+                viewModel { BatteryMonitorViewModel(sharedViewModel) }
+            BatteryMonitorScreen(
+                navController = navController,
+                viewModel = batteryMonitorViewModel
+            )
         }
 
         composable(Screen.Security.route) {

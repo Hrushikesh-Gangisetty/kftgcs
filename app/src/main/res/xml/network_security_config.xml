@@ -22,6 +22,9 @@
         <!-- Legacy AWS EC2 Server (for backward compatibility) -->
         <domain includeSubdomains="true">65.0.76.31</domain>
 
+        <!-- Param Management Auth backend (HTTP) -->
+        <domain includeSubdomains="true">13.235.13.233</domain>
+
         <!-- Localhost for emulator/local testing -->
         <domain includeSubdomains="true">localhost</domain>
         <domain includeSubdomains="true">127.0.0.1</domain>
