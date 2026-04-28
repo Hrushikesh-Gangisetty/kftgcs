@@ -175,11 +175,11 @@ fun SettingsScreen(navController: NavHostController) {
 
             Spacer(modifier = Modifier.height(buttonSpacing))
 
-            // 8. Battery Monitor Settings
+            // 8. Battery
             NumberedButton(
                 number = 8,
                 icon = Icons.Filled.BatteryChargingFull,
-                title = "Battery Monitor Settings",
+                title = "Battery",
                 onClick = { navController.navigate("battery_monitor_settings") },
                 height = buttonHeight
             )

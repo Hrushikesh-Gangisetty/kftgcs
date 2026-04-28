@@ -95,9 +95,13 @@ class MavlinkTelemetryRepository(
     var fcuSystemId: UByte = 0u
     var fcuComponentId: UByte = 0u
 
-    // Battery voltage smoothing (EMA filter to reduce fluctuations)
+    // Battery voltage smoothing (EMA filter for SYS_STATUS fallback)
     private var smoothedVoltage: Float? = null
     private val VOLTAGE_ALPHA = 0.3f  // Lower = smoother, higher = more responsive
+
+    // Voltage from BATTERY_STATUS (sum of cell voltages — no 65.535V UShort limit).
+    // When populated, this overrides the SYS_STATUS voltage which caps at 65.535V.
+    private var battStatusVoltage: Float? = null
 
     // Track if disconnection was intentional (user-initiated)
     private var intentionalDisconnect = false
@@ -161,9 +165,9 @@ class MavlinkTelemetryRepository(
     private var zeroFlowStartTime: Long? = null
     private var pumpTurnedOnTime: Long? = null  // Track when pump was turned ON for initial delay
     private var consecutiveZeroFlowSamples: Int = 0  // Count of back-to-back confirmed zero-flow readings
-    private val ZERO_FLOW_THRESHOLD_MS = 2000L      // 2 seconds of confirmed zero flow = tank empty
-    private val PUMP_STARTUP_DELAY_MS = 2000L       // 2 second delay after pump turns ON before checking flow
-    private val MIN_ZERO_FLOW_SAMPLES = 6           // Require >=6 consecutive zero samples (guards against telemetry gaps; ~1.5s @ 4Hz)
+    private val ZERO_FLOW_THRESHOLD_MS = 1000L      // 1 second of confirmed zero flow = tank empty
+    private val PUMP_STARTUP_DELAY_MS = 1500L       // 1.5-second delay after pump turns ON before checking flow
+    private val MIN_ZERO_FLOW_SAMPLES = 4           // Require >=6 consecutive zero samples (guards against telemetry gaps; ~1.5s @ 4Hz)
     // NOTE: Total worst-case time from pump ON to tank empty trigger = 4 seconds
     // The 6-sample minimum prevents false triggers if BATT2 telemetry rate drops below 4Hz
 
@@ -351,7 +355,7 @@ class MavlinkTelemetryRepository(
             setMessageRate(33u, 5f)    // GLOBAL_POSITION_INT - increased to 5Hz for smoother position updates
             setMessageRate(74u, 20f)   // VFR_HUD - 20Hz (50ms) for INSTANT speed updates (pilot critical)
             setMessageRate(30u, 20f)   // ATTITUDE - 20Hz (50ms) for smooth yaw updates (critical for nose position)
-            setMessageRate(147u, 4f)   // BATTERY_STATUS - 4Hz for fast flow rate updates (spray telemetry)
+            setMessageRate(147u, 8f)   // BATTERY_STATUS - 4Hz for fast flow rate updates (spray telemetry)
             setMessageRate(65u, 1f)    // RC_CHANNELS - reduced from 2Hz for Bluetooth
 
             // Request RADIO_STATUS for RC battery monitoring
@@ -748,7 +752,25 @@ class MavlinkTelemetryRepository(
                     // Main battery (id=0)
                     if (b.id.toInt() == 0) {
                         val currentA = if (b.currentBattery.toInt() == -1) null else b.currentBattery / 100f
-                        _state.update { it.copy(currentA = currentA) }
+
+                        // Sum all valid cell voltages from BATTERY_STATUS.voltages[].
+                        // Each entry is UShort millivolts; 0xFFFF = "cell not present".
+                        // Summing cells supports pack voltages >65.535V — the SYS_STATUS
+                        // voltage_battery field is a single UShort (cap = 65.535V) and overflows
+                        // to 0 for higher voltages. When cells are available this value wins.
+                        val validCells = b.voltages.filter { it.toInt() != 0xFFFF && it.toInt() > 0 }
+                        if (validCells.isNotEmpty()) {
+                            battStatusVoltage = validCells.sumOf { it.toLong() }.toFloat() / 1000f
+                        }
+
+                        _state.update { s ->
+                            s.copy(
+                                currentA = currentA,
+                                // Prefer BATTERY_STATUS cell-sum (no 65.5V overflow); SYS_STATUS
+                                // handler fills voltage when battStatusVoltage is unavailable.
+                                voltage = battStatusVoltage ?: s.voltage
+                            )
+                        }
                     }
                     // Flow sensor (BATT2 - id=1)
                     else if (b.id.toInt() == 1) {
@@ -1422,10 +1444,15 @@ class MavlinkTelemetryRepository(
                 .map { it.message }
                 .filterIsInstance<SysStatus>()
                 .collect { s ->
-                    val vBattRaw = if (s.voltageBattery.toUInt() == 0xFFFFu) null else s.voltageBattery.toFloat() / 1000f
+                    // SYS_STATUS.voltage_battery is a UShort → max 65.535V.
+                    // It is used as a fallback only when BATTERY_STATUS cell voltages are
+                    // unavailable (battStatusVoltage == null). For packs >65.5V, the FC must
+                    // report per-cell voltages in BATTERY_STATUS so that battStatusVoltage wins.
+                    val vBattRaw = if (s.voltageBattery.toUInt() == 0xFFFFu) null
+                                   else s.voltageBattery.toFloat() / 1000f
 
-                    // Apply EMA (Exponential Moving Average) filter to smooth voltage fluctuations
-                    val vBatt = if (vBattRaw != null) {
+                    // Apply EMA smoothing to the SYS_STATUS value
+                    val vBattSmoothed = if (vBattRaw != null) {
                         val prev = smoothedVoltage
                         if (prev != null) {
                             (VOLTAGE_ALPHA * vBattRaw + (1 - VOLTAGE_ALPHA) * prev).also { smoothedVoltage = it }
@@ -1443,7 +1470,12 @@ class MavlinkTelemetryRepository(
                     val enabled = (s.onboardControlSensorsEnabled.value and SENSOR_3D_GYRO) != 0u
                     val healthy = (s.onboardControlSensorsHealth.value and SENSOR_3D_GYRO) != 0u
                     val armable = present && enabled && healthy
-                    _state.update { it.copy(voltage = vBatt, batteryPercent = pct, armable = armable) }
+                    _state.update { it.copy(
+                        // BATTERY_STATUS cell-sum takes priority; SYS_STATUS is fallback
+                        voltage = battStatusVoltage ?: vBattSmoothed,
+                        batteryPercent = pct,
+                        armable = armable
+                    ) }
                 }
         }
 
@@ -2956,8 +2988,9 @@ class MavlinkTelemetryRepository(
             stopFenceMonitoring()
             // Mark this as an intentional disconnect to prevent auto-reconnect
             intentionalDisconnect = true
-            // Reset voltage smoothing filter
+            // Reset voltage smoothing state
             smoothedVoltage = null
+            battStatusVoltage = null
             // Attempt to close the TCP connection gracefully
             connection.close()
         } catch (e: Exception) {
