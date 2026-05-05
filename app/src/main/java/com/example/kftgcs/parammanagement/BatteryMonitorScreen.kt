@@ -1,5 +1,6 @@
 package com.example.kftgcs.parammanagement
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -7,13 +8,16 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -25,8 +29,10 @@ import androidx.navigation.NavController
 // ─────────────────────────────────────────────────────────────────────
 private val BmBg        = Color(0xFF0D1B4B)
 private val BmTopBar    = Color(0xFF1A237E)
+private val BmCard      = Color(0xFF1E2D6B)
 private val BmAccent    = Color(0xFF3A6BD5)
 private val BmAccentLt  = Color(0xFF87CEEB)
+private val BmGreen     = Color(0xFF38A169)
 private val BmTextW     = Color.White
 private val BmTextMuted = Color.White.copy(alpha = 0.55f)
 private val BmFieldBg   = Color.White.copy(alpha = 0.08f)
@@ -41,6 +47,28 @@ fun BatteryMonitorScreen(
     viewModel: BatteryMonitorViewModel
 ) {
     val state by viewModel.state.collectAsState()
+    val ctx = LocalContext.current
+
+    // Auto-load params from drone on connect
+    LaunchedEffect(state.isDroneConnected) {
+        if (state.isDroneConnected && state.loadedVoltMult == null && !state.isLoading) {
+            viewModel.loadFromDrone()
+        }
+    }
+
+    // Toast feedback
+    LaunchedEffect(state.successMessage) {
+        state.successMessage?.let {
+            Toast.makeText(ctx, "✅ $it", Toast.LENGTH_SHORT).show()
+            viewModel.clearMessages()
+        }
+    }
+    LaunchedEffect(state.errorMessage) {
+        state.errorMessage?.let {
+            Toast.makeText(ctx, "⚠ $it", Toast.LENGTH_LONG).show()
+            viewModel.clearMessages()
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -63,8 +91,10 @@ fun BatteryMonitorScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+
+            // ── Voltage input ──────────────────────────────────────────
             LabeledNumberField(
                 label = "Measured Battery Voltage",
                 suffix = "V",
@@ -73,6 +103,99 @@ fun BatteryMonitorScreen(
                 keyboardType = KeyboardType.Decimal,
                 helper = "Read with a multimeter at the battery terminals"
             )
+
+            // ── Calculated new BATT_VOLT_MULT ─────────────────────────
+            val calc = state.calculatedVoltageDivider
+            Card(
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = BmCard
+                ),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    Modifier
+                        .padding(horizontal = 16.dp, vertical = 14.dp)
+                        .fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "Calculated BATT_VOLT_MULT",
+                            color = BmAccentLt, fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            calc?.let { "%.6f".format(it) } ?: "—",
+                            color = BmTextW, fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+                    if (calc != null) {
+                        Text(
+                            "ready to save",
+                            color = BmGreen, fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+            }
+
+            // ── Save button ───────────────────────────────────────────
+            Button(
+                onClick = {
+                    viewModel.saveToDrone(
+                        monitor     = null,
+                        capacityMah = null,
+                        voltMult    = calc,
+                        ampPerVolt  = null,
+                        voltPin     = null,
+                        currPin     = null
+                    )
+                },
+                enabled = state.isDroneConnected && !state.isSaving && !state.isLoading && calc != null,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = BmGreen,
+                    disabledContainerColor = BmAccent.copy(alpha = 0.25f)
+                ),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp)
+            ) {
+                if (state.isSaving) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        color = Color.White,
+                        strokeWidth = 2.5.dp
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Text("Saving…", fontWeight = FontWeight.SemiBold)
+                } else {
+                    Icon(Icons.Filled.Save, null, Modifier.size(20.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Save BATT_VOLT_MULT to Drone", fontWeight = FontWeight.SemiBold)
+                }
+            }
+
+            // ── Hint when drone not connected ─────────────────────────
+            if (!state.isDroneConnected) {
+                Text(
+                    "⚠ Connect to drone to enable saving",
+                    color = BmTextMuted, fontSize = 12.sp,
+                    modifier = Modifier.align(Alignment.CenterHorizontally)
+                )
+            }
+
+            // ── Hint when calc not yet possible ───────────────────────
+            if (state.isDroneConnected && calc == null && state.measuredVoltageInput.isNotBlank()) {
+                Text(
+                    "Waiting for live voltage telemetry and loaded BATT_VOLT_MULT…",
+                    color = BmTextMuted, fontSize = 11.sp
+                )
+            }
         }
     }
 }

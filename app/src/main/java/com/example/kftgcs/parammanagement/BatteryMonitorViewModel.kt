@@ -265,8 +265,13 @@ class BatteryMonitorViewModel(
                 writes += Write("BATT_MONITOR", monitor.toFloat(), true)
             if (capacityMah != null && capacityMah != s.loadedCapacityMah)
                 writes += Write("BATT_CAPACITY", capacityMah.toFloat(), true)
-            if (voltMult != null && (s.loadedVoltMult == null || !floatsEqual(voltMult, s.loadedVoltMult)))
-                writes += Write("BATT_VOLT_MULT", voltMult, false)
+            if (voltMult != null) {
+                if (s.loadedVoltMult != null && floatsEqual(voltMult, s.loadedVoltMult)) {
+                    LogUtils.d(TAG, "⚠️ BATT_VOLT_MULT unchanged (${voltMult}), skipping write")
+                } else {
+                    writes += Write("BATT_VOLT_MULT", voltMult, false)
+                }
+            }
             if (ampPerVolt != null && (s.loadedAmpPerVolt == null || !floatsEqual(ampPerVolt, s.loadedAmpPerVolt)))
                 writes += Write("BATT_AMP_PERVLT", ampPerVolt, false)
             if (voltPin != null && voltPin != s.loadedVoltPin)
@@ -294,6 +299,7 @@ class BatteryMonitorViewModel(
                 delay(INTER_PARAM_DELAY_MS)
             }
 
+            val allSucceeded = failed.isEmpty()
             _state.update { cur ->
                 cur.copy(
                     isSaving = false,
@@ -303,12 +309,19 @@ class BatteryMonitorViewModel(
                     loadedAmpPerVolt  = confirmed["BATT_AMP_PERVLT"]             ?: cur.loadedAmpPerVolt,
                     loadedVoltPin     = confirmed["BATT_VOLT_PIN"]?.toInt()      ?: cur.loadedVoltPin,
                     loadedCurrPin     = confirmed["BATT_CURR_PIN"]?.toInt()      ?: cur.loadedCurrPin,
-                    successMessage = if (failed.isEmpty())
+                    measuredVoltageInput = if (allSucceeded) "" else cur.measuredVoltageInput,
+                    successMessage = if (allSucceeded)
                         "Saved ${writes.size} parameter(s) to drone"
                     else
                         "Saved ${confirmed.size}/${writes.size}; failed: ${failed.joinToString()}",
-                    errorMessage = if (failed.isNotEmpty()) "Some writes failed — see message" else null
+                    errorMessage = if (!allSucceeded) "Some writes failed — see message" else null
                 )
+            }
+
+            // Re-read params so loadedVoltMult reflects the freshly written value
+            if (allSucceeded) {
+                delay(200L)
+                loadFromDrone()
             }
         }
     }
