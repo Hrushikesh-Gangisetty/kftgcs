@@ -528,6 +528,52 @@ object ApiService {
             }
         }
     }
+
+    suspend fun pilotResetPassword(request: PilotResetPasswordRequest): ApiResponse<MessageResponse> {
+        return withContext(Dispatchers.IO) {
+            try {
+                Timber.d("pilotResetPassword action=${request.action} email=${request.email}")
+                val json = gson.toJson(request)
+                val requestBody = json.toRequestBody(jsonMediaType)
+
+                val httpRequest = Request.Builder()
+                    .url("$BASE_URL/api/pilot-reset-password")
+                    .addHeader("Content-Type", "application/json")
+                    .addHeader("Accept", "application/json")
+                    .post(requestBody)
+                    .build()
+
+                val response = client.newCall(httpRequest).execute()
+                val responseBody = response.body?.string() ?: ""
+                Timber.d("pilotResetPassword response code: ${response.code}")
+
+                if (responseBody.trimStart().startsWith("<") || responseBody.contains("<!DOCTYPE")) {
+                    return@withContext ApiResponse.Error("Server configuration error", response.code)
+                }
+
+                if (response.isSuccessful) {
+                    try {
+                        val successResponse = gson.fromJson(responseBody, MessageResponse::class.java)
+                        ApiResponse.Success(successResponse)
+                    } catch (e: Exception) {
+                        Timber.e(e, "Failed to parse reset-password success response")
+                        ApiResponse.Error("Invalid response format: ${e.message}", response.code)
+                    }
+                } else {
+                    try {
+                        val errorResponse = gson.fromJson(responseBody, ErrorResponse::class.java)
+                        Timber.e("pilotResetPassword error: ${errorResponse.error}")
+                        ApiResponse.Error(errorResponse.error, errorResponse.status_code)
+                    } catch (e: Exception) {
+                        ApiResponse.Error(responseBody.take(200).ifEmpty { "Unknown error" }, response.code)
+                    }
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Network error during pilotResetPassword")
+                ApiResponse.Error("Network error: ${e.message}", 0)
+            }
+        }
+    }
 }
 
 // Request models
@@ -560,6 +606,14 @@ data class PilotLoginRequest(
 
 data class PilotLogoutRequest(
     @SerializedName("email") val email: String
+)
+
+data class PilotResetPasswordRequest(
+    @SerializedName("action") val action: String,
+    @SerializedName("email") val email: String,
+    @SerializedName("otp") val otp: String? = null,
+    @SerializedName("new_password") val new_password: String? = null,
+    @SerializedName("confirm_password") val confirm_password: String? = null
 )
 
 // Response models

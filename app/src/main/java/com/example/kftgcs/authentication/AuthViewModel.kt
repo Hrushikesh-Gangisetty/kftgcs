@@ -308,21 +308,97 @@ class AuthViewModel : ViewModel() {
 
     fun signout(context: Context) {
         val email = SessionManager.getEmail(context)
+        // Clear session and update state IMMEDIATELY (synchronously) so that any
+        // composable already observing authState sees Unauthenticated before the
+        // navigation happens — prevents the race condition where LoginPage briefly
+        // sees Authenticated and bounces the user back to LanguageSelection.
+        SessionManager.clearSession(context)
+        _authState.value = AuthState.Unauthenticated
+
+        // Fire-and-forget: tell the server about the logout in the background.
+        // We do NOT wait for the response before navigating — the session is
+        // already cleared locally above.
         if (email != null) {
             viewModelScope.launch {
-                val request = PilotLogoutRequest(email)
-                ApiService.pilotLogout(request)
-                SessionManager.clearSession(context)
-                _authState.value = AuthState.Unauthenticated
+                try {
+                    ApiService.pilotLogout(PilotLogoutRequest(email))
+                } catch (e: Exception) {
+                    Timber.w(e, "signout: background API call failed (ignored)")
+                }
             }
-        } else {
-            SessionManager.clearSession(context)
-            _authState.value = AuthState.Unauthenticated
         }
     }
 
     fun resetAuthState() {
         _authState.value = AuthState.Unauthenticated
+    }
+
+    // ── Forgot Password ──────────────────────────────────────────────────
+
+    fun sendResetOtp(email: String) {
+        if (email.isBlank()) {
+            _authState.value = AuthState.Error("Email is required")
+            return
+        }
+        _authState.value = AuthState.Loading
+        viewModelScope.launch {
+            try {
+                val request = PilotResetPasswordRequest(action = "send_otp", email = email.trim().lowercase())
+                when (val response = ApiService.pilotResetPassword(request)) {
+                    is ApiResponse.Success -> _authState.value = AuthState.ResetOtpSent(response.data.message ?: "OTP sent successfully")
+                    is ApiResponse.Error -> _authState.value = AuthState.Error(response.message)
+                }
+            } catch (e: Exception) {
+                _authState.value = AuthState.Error("Unexpected error: ${e.message}")
+            }
+        }
+    }
+
+    fun verifyResetOtp(email: String, otp: String) {
+        if (otp.isBlank()) {
+            _authState.value = AuthState.Error("OTP is required")
+            return
+        }
+        _authState.value = AuthState.Loading
+        viewModelScope.launch {
+            try {
+                val request = PilotResetPasswordRequest(action = "verify_otp", email = email.trim().lowercase(), otp = otp.trim())
+                when (val response = ApiService.pilotResetPassword(request)) {
+                    is ApiResponse.Success -> _authState.value = AuthState.ResetOtpVerified(response.data.message ?: "OTP verified")
+                    is ApiResponse.Error -> _authState.value = AuthState.Error(response.message)
+                }
+            } catch (e: Exception) {
+                _authState.value = AuthState.Error("Unexpected error: ${e.message}")
+            }
+        }
+    }
+
+    fun resetPassword(email: String, newPassword: String, confirmPassword: String) {
+        if (newPassword.isBlank() || confirmPassword.isBlank()) {
+            _authState.value = AuthState.Error("Both password fields are required")
+            return
+        }
+        if (newPassword != confirmPassword) {
+            _authState.value = AuthState.Error("Passwords do not match")
+            return
+        }
+        _authState.value = AuthState.Loading
+        viewModelScope.launch {
+            try {
+                val request = PilotResetPasswordRequest(
+                    action = "reset_password",
+                    email = email.trim().lowercase(),
+                    new_password = newPassword,
+                    confirm_password = confirmPassword
+                )
+                when (val response = ApiService.pilotResetPassword(request)) {
+                    is ApiResponse.Success -> _authState.value = AuthState.PasswordResetSuccess(response.data.message ?: "Password reset successful")
+                    is ApiResponse.Error -> _authState.value = AuthState.Error(response.message)
+                }
+            } catch (e: Exception) {
+                _authState.value = AuthState.Error("Unexpected error: ${e.message}")
+            }
+        }
     }
 }
 
@@ -334,4 +410,8 @@ sealed class AuthState {
     data class RegistrationSuccess(val message: String) : AuthState()
     data class OtpVerified(val message: String) : AuthState()
     data class OtpResent(val message: String) : AuthState()
+    // Forgot-password flow states
+    data class ResetOtpSent(val message: String) : AuthState()
+    data class ResetOtpVerified(val message: String) : AuthState()
+    data class PasswordResetSuccess(val message: String) : AuthState()
 }

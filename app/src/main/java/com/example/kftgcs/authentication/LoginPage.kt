@@ -188,6 +188,10 @@ fun LoginPage(modifier: Modifier = Modifier, navController: NavController, authV
 
                 Spacer(modifier = Modifier.height(4.dp))
 
+                TextButton(onClick = { navController.navigate(Screen.ForgotPassword.route) }) {
+                    Text(text = "Forgot Password?", color = Color(0xFF1565C0))
+                }
+
                 TextButton(onClick = { navController.navigate(Screen.Signup.route) }) {
                     Text(text = "Signup", color = Color.Black)
                 }

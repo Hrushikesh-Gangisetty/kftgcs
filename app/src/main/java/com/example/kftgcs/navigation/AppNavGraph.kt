@@ -21,6 +21,7 @@ import com.example.kftgcs.authentication.SignupPage
 import com.example.kftgcs.authentication.WelcomeScreen
 import com.example.kftgcs.authentication.OtpVerificationPage
 import com.example.kftgcs.authentication.TermsAndConditionsScreen
+import com.example.kftgcs.authentication.ForgotPasswordPage
 import com.example.kftgcs.calibration.CalibrationScreen
 import com.example.kftgcs.calibration.CalibrationViewModel
 import com.example.kftgcs.calibration.CompassCalibrationScreen
@@ -96,6 +97,7 @@ sealed class Screen(val route: String) {
     object SpraySystemTest : Screen("spray_system_test")
     object Security : Screen("security")
     object TermsAndConditions : Screen("terms_and_conditions")
+    object ForgotPassword : Screen("forgot_password")
     object Options : Screen("options")
     object BatteryMonitorSettings : Screen("battery_monitor_settings")
     // Param Management
@@ -164,6 +166,13 @@ fun AppNavGraph(navController: NavHostController) {
 
         composable(Screen.TermsAndConditions.route) {
             TermsAndConditionsScreen(navController = navController)
+        }
+
+        composable(Screen.ForgotPassword.route) {
+            ForgotPasswordPage(
+                navController = navController,
+                authViewModel = authViewModel
+            )
         }
 
         composable("otp_verification/{email}") { backStackEntry ->
